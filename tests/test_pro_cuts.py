@@ -54,6 +54,22 @@ def test_trim_dead_ends_ignores_action_edges():
     assert out[-1][1] == 30.0
 
 
+def test_trim_dead_ends_drops_short_trailing_non_action():
+    # ends on a 2.4s "lag" outro (stopping the recording) — drop it so
+    # the video ends on the action segment
+    segs = [[0.0, 10.0, 2], [10.0, 12.4, 1]]
+    out = A.trim_dead_ends(segs)
+    assert out[-1][2] == 2
+    assert out[-1][1] == 10.0
+
+
+def test_trim_dead_ends_no_action_keeps_tail():
+    # uniform-motion video (all lag): nothing to "end on", keep the tail
+    segs = [[0.0, 10.0, 1], [10.0, 12.0, 1]]
+    out = A.trim_dead_ends(segs)
+    assert len(out) == 2
+
+
 # ---------------------------------------------------------------- hook
 
 def test_pick_hook_finds_peak():

@@ -132,15 +132,20 @@ def to_segments(
 
 
 def trim_dead_ends(segs: list[Segment]) -> list[Segment]:
-    """Open and close on action: hard-trim dead footage at the edges.
+    """Open and close on action: hard-trim boring footage at the edges.
 
     A boring opener kills retention in the first second and a boring
-    ending kills the loop/rewatch, so instead of merely fast-forwarding
-    leading/trailing dead segments, cut them — keeping a short beat of
-    context (1.5s lead-in, 1.0s tail).
+    ending kills the loop/rewatch. Leading dead footage is cut to a short
+    1.5s beat of context. At the tail, short non-action segments (the
+    "stop the recording" shuffle) are dropped entirely so the video ends
+    on the win — long ones are cut to a 1.0s beat instead.
     """
     if segs and segs[0][2] == 0 and segs[0][1] - segs[0][0] > 2.0:
         segs[0][0] = segs[0][1] - 1.5
+    if any(s[2] == 2 for s in segs):
+        while (len(segs) > 1 and segs[-1][2] != 2
+               and segs[-1][1] - segs[-1][0] <= 6.0):
+            segs.pop()
     if segs and segs[-1][2] == 0 and segs[-1][1] - segs[-1][0] > 1.5:
         segs[-1][1] = segs[-1][0] + 1.0
     return segs
