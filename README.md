@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="tokcutbot.png" alt="tokcut logo" width="200">
+
 # ✂️🎬 tokcut
 
 ### raw phone clip in → scroll-stopping TikTok out
@@ -9,8 +11,9 @@ caption, and drop a beat underneath — ready to upload.*
 
 [![CI](https://github.com/vyahello/tokcut/actions/workflows/ci.yml/badge.svg)](https://github.com/vyahello/tokcut/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue?logo=python&logoColor=white)](https://www.python.org)
-[![Tests](https://img.shields.io/badge/tests-30%20passing-brightgreen?logo=pytest&logoColor=white)](tests)
+[![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen?logo=pytest&logoColor=white)](tests)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff)
+[![Types: mypy](https://img.shields.io/badge/types-mypy-2a6db2?logo=python&logoColor=white)](https://mypy-lang.org)
 [![ffmpeg](https://img.shields.io/badge/powered%20by-ffmpeg-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
@@ -80,33 +83,39 @@ tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
    mean frame-to-frame difference.
 3. **Classify** the timeline into dead / lag / action tiers (adaptive
    percentile thresholds; short runs merged so cuts feel intentional).
-4. **Speeds** — action 1x, lag ≈1.7x, dead ≈3.2x; `--target N` solves the
+4. **Editorial cuts** — cold-open **hook** on the strongest beat,
+   hard-trim boring lead-ins/outros (open and close on action), and
+   **auto-zoom** into the action when static margins waste the frame.
+5. **Speeds** — action 1x, lag ≈1.7x, dead ≈3.2x; `--target N` solves the
    fast-tier speeds to land at N seconds.
-5. **Caption** — Pillow renders purple bold-italic on rounded white boxes
+6. **Caption** — Pillow renders purple bold-italic on rounded white boxes
    (emoji supported). A saliency map places it over the calmest region
    inside TikTok's UI safe zone, so it never covers the screen/device.
-6. **Audio** — muted by default (silent export for in-app TikTok sound).
+7. **Audio** — muted by default (silent export for in-app TikTok sound).
    `--keep-audio` retains the original ambient; `--music` bakes in a
    royalty-free synthwave/phonk track synthesized by `tokcut.music` (zero
    copyright risk).
-7. **Render** — one ffmpeg `filter_complex`: per-segment trim/setpts +
-   atempo, concat, lanczos scale into 1080x1920, caption overlay, encode
-   **libx265 main10 crf 18** preserving the iPhone HLG color tags.
+8. **Render** — one ffmpeg `filter_complex`: per-segment trim/setpts +
+   atempo, concat, optional crop, lanczos scale into 1080x1920, caption
+   overlay, encode **libx265 main10 crf 18** with color tags matched to
+   the source (HLG/PQ for HDR, bt709 for SDR).
 
 ## 🗂️ Layout
 
 ```
 tokcut/            package
-  analysis.py        probe, motion scoring, saliency, edit decision list
+  analysis.py        probe, motion scoring, saliency, hook/crop/trims
   caption.py         caption rendering + TikTok-eligibility checks
   layout.py          canvas layout + saliency-aware caption placement
   music.py           procedural dark-synthwave/phonk generator
-  render.py          ffmpeg filtergraph + encode
-  cli.py             argparse entry point
+  render.py          ffmpeg filtergraph + encode (source-matched color)
+  cli.py             argparse CLI + reusable edit() pipeline core
+  judge.py           Claude Code: caption writing + output review
   types.py           shared TypedDicts + type aliases
+  bot/               private Telegram bot (config, session, pipeline, app)
 tests/             pytest suite (logic-level, no GPU/network needed)
-docs/              USAGE.md, IDEAS.md
-.github/workflows/ CI (lint + test; deploy stage stubbed for the VPS)
+docs/              USAGE.md, IDEAS.md, BOT.md, BOT_ARCHITECTURE.md
+.github/workflows/ CI (ruff + mypy + pytest; deploy stage stubbed for VPS)
 ```
 
 ## 🧪 Develop
@@ -117,12 +126,25 @@ venv/bin/ruff check .    # lint
 venv/bin/mypy            # type-check (codebase is fully typed)
 ```
 
+## 🤖 Telegram bot
+
+📱 Phone → private Telegram bot → **Claude writes the caption, the bot
+renders, Claude reviews** → file back with **✅ Approve / 🔁 Redo**. Redo in
+plain words ("shorter", "caption at the top", "add phonk music") and Claude
+maps it to settings for the next revision. Claude Code runs on your
+subscription OAuth — see [`docs/BOT.md`](docs/BOT.md) to run it and
+[`docs/BOT_ARCHITECTURE.md`](docs/BOT_ARCHITECTURE.md) for the design.
+
+```bash
+pip install -e ".[bot]"          # adds python-telegram-bot
+cp .env.example .env             # fill in token + your Telegram id
+tokcut-bot
+```
+
 ## 🗺️ Roadmap
 
-📱 Phone → private Telegram bot → **Claude directs the edit** → file back
-(approve / redo loop), plus 🥁 beat-aligned music cuts. See
-[`docs/BOT_ARCHITECTURE.md`](docs/BOT_ARCHITECTURE.md) for the design and
-[`docs/IDEAS.md`](docs/IDEAS.md) for the content playbook.
+Local Bot API server for >50 MB clips, 🥁 beat-aligned music cuts, and VPS
+deploy. See [`docs/IDEAS.md`](docs/IDEAS.md) for the content playbook.
 
 ---
 
