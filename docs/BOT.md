@@ -1,10 +1,11 @@
 # Running the Telegram bot
 
-Status: **step 3** — Claude in the loop. Send a clip, Claude watches it
-and writes the caption, the bot renders the 1080x1920 edit (hook,
-auto-zoom, speed-ramps, muted for an in-app sound), Claude reviews the
-result, and the finished file comes back as a document. The approve/redo
-conversation is step 4 (see `BOT_ARCHITECTURE.md`).
+Status: **step 4** — the full loop. Send a clip, Claude watches it and
+writes the caption, the bot renders the 1080x1920 edit, Claude reviews
+the result, and the file arrives with **[✅ Approve] [🔁 Redo]** buttons.
+Tap Redo and say what to change in your own words — Claude maps it onto
+the editor's settings and a new revision is rendered. Only the local Bot
+API server for >50 MB files remains (step 5, see `BOT_ARCHITECTURE.md`).
 
 ## How a clip flows
 
@@ -16,8 +17,13 @@ conversation is step 4 (see `BOT_ARCHITECTURE.md`).
    and a status message live-updates with the edit plan and progress.
 4. **Claude reviews the rendered output** (hook, caption legibility,
    ending) and its verdict is attached to the reply.
-5. The finished `.mp4` comes back as a **document** (no recompression),
-   ready to upload to TikTok.
+5. The finished `.mp4` comes back as a **document** (no recompression)
+   with [✅ Approve] [🔁 Redo] buttons.
+6. **Redo**: describe the change in plain words — "shorter and punchier",
+   "different caption", "caption at the top", "no cold open", "add phonk
+   music". Claude maps it to settings (validated and clamped in Python),
+   and revision r2 arrives with the same buttons. Sessions remember
+   history and rejected captions, so regenerated captions don't repeat.
 
 ## Claude auth (subscription OAuth)
 

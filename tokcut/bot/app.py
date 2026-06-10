@@ -1,18 +1,20 @@
-"""Telegram bot entry point — step 2: full edit round-trip.
+"""Telegram bot entry point — step 4: approve/redo loop.
 
-Python's job: receive the clip, enforce the allow-list, download it, run
-the tokcut edit pipeline in a worker thread (queued — one render at a
-time), and send the finished vertical clip back as a *document* so
-Telegram doesn't recompress it. Claude Code's job (step 3): caption
-wording, output review, and the approve/redo loop.
+Python's job: Telegram I/O, allow-list, downloads, session state, running
+the edit pipeline (queued, in a worker thread), validating every parameter
+change. Claude Code's job (subscription OAuth): watching frames to write
+the caption, reviewing the rendered output, and interpreting free-text
+redo feedback into setting changes.
 """
 
 import asyncio
 import logging
 import os
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -22,16 +24,39 @@ from telegram.ext import (
 from ..analysis import probe
 from ..caption import check_caption
 from ..cli import edit
-from ..judge import claude_available, review_output, suggest_caption
+from ..judge import (
+    claude_available,
+    interpret_feedback,
+    review_output,
+    suggest_caption,
+)
 from .config import BotConfig, is_allowed, load_config
 from .pipeline import derive_caption
+from .session import (
+    EditSession,
+    apply_updates,
+    fallback_updates,
+    validate_updates,
+)
 
 log = logging.getLogger("tokcut.bot")
+
+APPROVE = "approve"
+REDO = "redo"
+VERDICT_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("✅ Approve", callback_data=APPROVE),
+    InlineKeyboardButton("🔁 Redo", callback_data=REDO),
+]])
 
 
 def _user_id(update) -> int | None:
     user = update.effective_user
     return user.id if user else None
+
+
+def _session(context: ContextTypes.DEFAULT_TYPE,
+             chat_id: int) -> EditSession | None:
+    return context.application.bot_data["sessions"].get(chat_id)
 
 
 async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -40,10 +65,104 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         "👋 Send me a clip — as a *file* for best quality — and I'll cut it "
-        "into a vertical TikTok edit and send it back.\n\n"
-        "Add a message caption to use it as the on-video caption text.",
+        "into a vertical TikTok edit and send it back for your approval.\n\n"
+        "Add a message caption to use it as the on-video caption text; "
+        "otherwise Claude writes one.",
         parse_mode="Markdown",
     )
+
+
+async def _claude_caption(msg, dest: str,
+                          avoid: list[str] | None = None
+                          ) -> tuple[str, str]:
+    """Ask Claude for (caption, subject); empty caption on failure."""
+    try:
+        duration = (await asyncio.to_thread(probe, dest))["duration"]
+        caption, subject = await asyncio.to_thread(
+            suggest_caption, dest, duration, avoid)
+        return caption, subject
+    except Exception as exc:  # noqa: BLE001 — judgment is best-effort
+        log.warning("caption judgment failed: %s", exc)
+        await msg.reply_text("🤖 Claude couldn't caption this one.")
+        return "", ""
+
+
+async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
+                              session: EditSession) -> None:
+    """Render the session's current state and deliver with the keyboard."""
+    cfg: BotConfig = context.application.bot_data["config"]
+    lock: asyncio.Lock = context.application.bot_data["render_lock"]
+    if lock.locked():
+        await msg.reply_text("⏳ Another render is running — you're queued.")
+
+    async with lock:  # renders are sequential: parallel x265 OOMs the box
+        session.revision += 1
+        rev = session.revision
+        status = await msg.reply_text(
+            f"✂️ Rendering r{rev}: “{session.caption}”")
+        loop = asyncio.get_running_loop()
+        progress: list[str] = []
+
+        def notify(line: str) -> None:
+            # called from the worker thread — marshal back to the loop
+            progress.append(line)
+            text = f"✂️ r{rev}\n" + "\n".join(progress[-6:])
+            asyncio.run_coroutine_threadsafe(
+                status.edit_text(text[:4000]), loop)
+
+        p = session.params
+        base = os.path.splitext(os.path.basename(session.source))[0]
+        out = os.path.join(cfg.workdir, f"{base}_tokcut_r{rev}.mp4")
+        try:
+            await asyncio.to_thread(
+                edit, session.source, session.caption,
+                output=out,
+                target=p.target,
+                caption_pos=p.caption_pos,
+                hook=p.hook,
+                crop_enabled=p.crop,
+                keep_audio=p.keep_audio,
+                music="__auto__" if p.music_style else None,
+                music_style=p.music_style or "synthwave",
+                on_progress=notify)
+        except Exception as exc:  # noqa: BLE001 — report, keep bot alive
+            log.exception("edit failed")
+            session.revision -= 1
+            await msg.reply_text(f"⚠️ Edit failed: {exc}")
+            return
+
+        review_line = ""
+        if cfg.claude_judge and claude_available():
+            await status.edit_text("🤖 Claude is reviewing the result…")
+            try:
+                duration = (await asyncio.to_thread(probe, out))["duration"]
+                review = await asyncio.to_thread(
+                    review_output, out, duration, session.caption)
+                if review["verdict"] == "approve":
+                    review_line = f"🤖 review: ✅ {review['notes']}"
+                else:
+                    issues = "\n".join(f"• {i}" for i in review["issues"])
+                    review_line = (f"🤖 review: 🔁 would redo:\n{issues}\n"
+                                   f"({review['notes']})")
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.warning("output review failed: %s", exc)
+
+        session.history.append(f"r{rev}: {session.summary()}")
+        size_mb = os.path.getsize(out) / 1048576
+        await msg.reply_text(f"⬆️ Uploading r{rev} ({size_mb:.1f} MB)…")
+        doc_caption = (f"r{rev} ✅ “{session.caption}”\n"
+                       "Muted — add a trending TikTok sound in-app."
+                       if not p.music_style and not p.keep_audio else
+                       f"r{rev} ✅ “{session.caption}”")
+        if review_line:
+            doc_caption += f"\n\n{review_line}"
+        with open(out, "rb") as fh:
+            await msg.reply_document(
+                document=fh,
+                filename=os.path.basename(out),
+                caption=doc_caption[:1024],
+                reply_markup=VERDICT_KEYBOARD,
+            )
 
 
 async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -76,89 +195,127 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     caption = (msg.caption or "").strip()
+    subject = ""
     if not caption and cfg.claude_judge and claude_available():
         await msg.reply_text("🤖 Asking Claude to watch the clip and "
                              "write a caption…")
-        try:
-            duration = (await asyncio.to_thread(probe, dest))["duration"]
-            caption, subject = await asyncio.to_thread(
-                suggest_caption, dest, duration)
+        caption, subject = await _claude_caption(msg, dest)
+        if caption:
             await msg.reply_text(
                 f"🤖 Claude sees: {subject}\n📝 Caption: “{caption}”")
-        except Exception as exc:  # noqa: BLE001 — judgment is best-effort
-            log.warning("caption judgment failed: %s", exc)
-            await msg.reply_text(
-                "🤖 Claude couldn't caption this one — using the filename.")
-            caption = ""
     if not caption:
         caption = derive_caption(msg.caption, file_name)
     for warning in check_caption(caption):
         await msg.reply_text(f"⚠️ caption check: {warning}")
 
-    lock: asyncio.Lock = context.application.bot_data["render_lock"]
-    if lock.locked():
-        await msg.reply_text("⏳ Another render is running — you're queued.")
+    session = EditSession(source=dest, file_name=file_name,
+                          caption=caption, subject=subject)
+    session.params.target = cfg.default_target
+    context.application.bot_data["sessions"][msg.chat_id] = session
 
-    async with lock:  # renders are sequential: parallel x265 OOMs the box
-        status = await msg.reply_text(f"✂️ Editing with caption: “{caption}”")
-        loop = asyncio.get_running_loop()
-        progress: list[str] = []
+    await _render_and_deliver(msg, context, session)
 
-        def notify(line: str) -> None:
-            # called from the worker thread — marshal back to the loop
-            progress.append(line)
-            text = "✂️ " + "\n".join(progress[-6:])
-            asyncio.run_coroutine_threadsafe(
-                status.edit_text(text[:4000]), loop)
 
-        out = os.path.join(
-            cfg.workdir, f"{file_obj.file_unique_id}_tokcut.mp4")
+async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.application.bot_data["config"]
+    query = update.callback_query
+    await query.answer()
+    if not is_allowed(_user_id(update), cfg.allowed_user_id):
+        return
+    session = _session(context, query.message.chat_id)
+    if session is None:
+        await query.message.reply_text("No active edit session — send a "
+                                       "clip to start one.")
+        return
+
+    if query.data == APPROVE:
+        session.awaiting_feedback = False
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            "🎉 Approved — post it! (Muted exports: add a trending sound "
+            "in the TikTok app.)")
+    elif query.data == REDO:
+        session.awaiting_feedback = True
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            "🔁 What should change? Tell me in your own words — e.g. "
+            "“shorter and punchier”, “different caption”, “caption at the "
+            "top”, “no cold open”, “add phonk music”.")
+
+
+async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.application.bot_data["config"]
+    if not is_allowed(_user_id(update), cfg.allowed_user_id):
+        return
+    msg = update.message
+    session = _session(context, msg.chat_id)
+    if session is None or not session.awaiting_feedback:
+        return  # not in a redo conversation — ignore chatter
+
+    feedback = msg.text.strip()
+    session.awaiting_feedback = False
+    session.history.append(f"feedback: {feedback}")
+
+    raw: dict = {}
+    reply_note = ""
+    if cfg.claude_judge and claude_available():
+        await msg.reply_text("🤖 Working out what to change…")
         try:
-            await asyncio.to_thread(
-                edit, dest, caption,
-                output=out, target=cfg.default_target, on_progress=notify)
-        except Exception as exc:  # noqa: BLE001 — report, keep bot alive
-            log.exception("edit failed")
-            await msg.reply_text(f"⚠️ Edit failed: {exc}")
+            raw = await asyncio.to_thread(
+                interpret_feedback, feedback, session.summary(),
+                session.history)
+            reply_note = str(raw.get("reply", ""))
+        except Exception as exc:  # noqa: BLE001 — fall back below
+            log.warning("feedback interpretation failed: %s", exc)
+    if not raw:
+        raw = fallback_updates(feedback, session.params.target)
+        if not raw:
+            await msg.reply_text(
+                "⚠️ I couldn't map that feedback to a setting (and Claude "
+                "is unavailable). Try “shorter”, “longer”, or tap Redo "
+                "again with different wording.")
+            session.awaiting_feedback = True
             return
 
-        review_line = ""
-        if cfg.claude_judge and claude_available():
-            await status.edit_text("🤖 Claude is reviewing the result…")
-            try:
-                duration = (await asyncio.to_thread(probe, out))["duration"]
-                review = await asyncio.to_thread(
-                    review_output, out, duration, caption)
-                if review["verdict"] == "approve":
-                    review_line = f"🤖 review: ✅ {review['notes']}"
-                else:
-                    issues = "\n".join(f"• {i}" for i in review["issues"])
-                    review_line = (f"🤖 review: 🔁 would redo:\n{issues}\n"
-                                   f"({review['notes']})")
-            except Exception as exc:  # noqa: BLE001 — review is best-effort
-                log.warning("output review failed: %s", exc)
+    updates = validate_updates(raw)
 
-        size_mb = os.path.getsize(out) / 1048576
-        await msg.reply_text(f"⬆️ Uploading ({size_mb:.1f} MB)…")
-        doc_caption = (f"✅ “{caption}”\n"
-                       "Muted — add a trending TikTok sound in-app.")
-        if review_line:
-            doc_caption += f"\n\n{review_line}"
-        with open(out, "rb") as fh:
-            await msg.reply_document(
-                document=fh,
-                filename=os.path.basename(out),
-                caption=doc_caption[:1024],
-            )
+    if updates.pop("regenerate_caption", False) and "caption" not in updates:
+        await msg.reply_text("🤖 Writing a new caption…")
+        avoid = [*session.past_captions, session.caption]
+        new_caption, _ = await _claude_caption(msg, session.source, avoid)
+        if new_caption:
+            updates["caption"] = new_caption
+
+    if "caption" in updates:
+        bad = check_caption(updates["caption"])
+        for warning in bad:
+            await msg.reply_text(f"⚠️ caption check: {warning}")
+        if bad:
+            updates.pop("caption")
+
+    changes = apply_updates(session, updates)
+    if not changes:
+        await msg.reply_text(
+            "🤷 Nothing changed — that feedback didn't map to any setting. "
+            "Tap Redo and try different wording.")
+        return
+
+    note = f"{reply_note}\n" if reply_note else ""
+    await msg.reply_text(note + "🔧 Changing: " + ", ".join(changes))
+    await _render_and_deliver(msg, context, session)
 
 
 def build_application(cfg: BotConfig) -> Application:
     app = Application.builder().token(cfg.telegram_token).build()
     app.bot_data["config"] = cfg
     app.bot_data["render_lock"] = asyncio.Lock()
+    app.bot_data["sessions"] = {}
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(
         MessageHandler(filters.VIDEO | filters.Document.ALL, on_clip))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, on_feedback))
     return app
 
 

@@ -125,26 +125,39 @@ Reply with ONLY a JSON object, no other text:
 {{"subject": "<what the video shows, one line>",
  "caption": "<your best caption>",
  "alternatives": ["<option 2>", "<option 3>"]}}
-"""
+{avoid}"""
 
 
-def suggest_caption(video: str, duration: float) -> tuple[str, str]:
+def suggest_caption(
+    video: str, duration: float, avoid: list[str] | None = None
+) -> tuple[str, str]:
     """Have Claude watch sampled frames and write the caption.
 
-    Returns (caption, subject). Raises JudgeUnavailable / ValueError on
-    failure — callers fall back to a deterministic caption.
+    `avoid` lists captions already rejected — Claude must produce
+    something meaningfully different. Returns (caption, subject). Raises
+    JudgeUnavailable / ValueError on failure — callers fall back to a
+    deterministic caption.
     """
+    avoid_note = ""
+    if avoid:
+        listed = "\n".join(f"- {a}" for a in avoid)
+        avoid_note = ("\nThe creator rejected these captions — write "
+                      f"something meaningfully different:\n{listed}\n")
     tmp = tempfile.mkdtemp(prefix="tokcut_judge_")
     try:
         frames = extract_frames(video, spread_times(duration), tmp)
         prompt = CAPTION_PROMPT.format(
-            frames="\n".join(frames), max_chars=MAX_CAPTION_CHARS - 4)
+            frames="\n".join(frames), max_chars=MAX_CAPTION_CHARS - 4,
+            avoid=avoid_note)
         reply = parse_json_obj(run_claude(prompt))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     candidates = [str(reply.get("caption", ""))]
     candidates += [str(a) for a in reply.get("alternatives", [])]
+    rejected = {a.strip().lower() for a in (avoid or [])}
+    candidates = [c for c in candidates
+                  if c.strip().lower() not in rejected]
     caption = pick_valid_caption(candidates)
     if caption is None:
         raise ValueError(f"no eligible caption among {candidates!r}")
@@ -199,3 +212,52 @@ def review_output(video: str, duration: float, caption: str) -> dict:
     return {"verdict": verdict,
             "issues": [str(i) for i in reply.get("issues", [])],
             "notes": str(reply.get("notes", ""))}
+
+
+FEEDBACK_PROMPT = """\
+You are the assistant of a TikTok auto-editor. The creator reviewed the
+rendered video and wants changes. Map their feedback onto the editor's
+settings.
+
+Current edit settings:
+{state}
+
+Session history (what was already tried):
+{history}
+
+The creator's feedback: "{feedback}"
+
+Available settings:
+- caption: the on-video caption text (max {max_chars} chars, specific,
+  no hashtags/quotes, no policy-risky wording, max one emoji at the end)
+- regenerate_caption: true when they want a different caption but didn't
+  provide the text themselves
+- target: output length in seconds (10-120); shorter = faster pacing
+- caption_pos: "auto" (calmest spot), "top", "bottom"
+- hook: cold-open teaser of the best beat (true/false)
+- crop: auto-zoom into the action, dropping static margins (true/false)
+- keep_audio: keep the original ambient sound (default is muted)
+- music: "synthwave", "phonk", or "off" (baked-in generated music)
+
+Reply with ONLY a JSON object, null for anything that should not change:
+{{"caption": null, "regenerate_caption": false, "target": null,
+ "caption_pos": null, "hook": null, "crop": null, "keep_audio": null,
+ "music": null,
+ "reply": "<one short line telling the creator what you'll change>"}}
+
+Change only what the feedback implies — when in doubt, change less.
+"""
+
+
+def interpret_feedback(feedback: str, state: str,
+                       history: list[str]) -> dict:
+    """Have Claude map free-text redo feedback onto editor settings.
+
+    Returns the raw dict (caller validates via session.validate_updates).
+    """
+    prompt = FEEDBACK_PROMPT.format(
+        state=state,
+        history="\n".join(history) or "(first render)",
+        feedback=feedback,
+        max_chars=MAX_CAPTION_CHARS - 4)
+    return parse_json_obj(run_claude(prompt))

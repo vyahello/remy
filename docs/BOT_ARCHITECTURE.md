@@ -142,6 +142,13 @@ Notes / caveats to keep in mind:
    render Claude reviews the output (hook frame included in the samples,
    verdicts constrained to fixable problems). Bot uses Claude when no
    caption is given; `TOKCUT_CLAUDE=off` disables.
-4. Approve/redo inline keyboard + multi-turn session continuity.
+4. ✅ **Approve/redo loop** — every delivered render carries
+   [✅ Approve] [🔁 Redo] buttons. Redo feedback in free text goes to
+   Claude (`judge.interpret_feedback`), which maps it onto editor
+   settings; `session.validate_updates` is the hard gate (whitelist +
+   clamps) before anything touches the render. Sessions keep history and
+   past captions, renders are versioned (`_r1`, `_r2`, …), and
+   "different caption" regenerates via Claude avoiding rejected ones.
+   Keyword fallback (shorter/longer) when Claude is unavailable.
 5. Local Bot API server for >50 MB files.
 6. (Later) auto-music, beat-aligned cuts.
