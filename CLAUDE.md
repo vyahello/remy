@@ -41,32 +41,40 @@ edited clip ready to post (see `docs/IDEAS.md`).
 3. **Classify** (`analysis.classify` + `to_segments`) — adaptive
    percentile thresholds (45th/80th) split the timeline into
    dead/lag/action tiers; runs shorter than 1.4s merge so cuts feel
-   intentional.
-4. **Speeds** (`analysis.assign_speeds`) — action 1.0x, lag ≈1.7x,
+   intentional. Near-uniform motion collapses to one tier (no noise
+   tiers on constantly-updating screen recordings).
+4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
+   `content_crop`) — hard-trim boring lead-ins/outros (open and close on
+   action); prepend a ~1.3s cold-open hook of the strongest beat (biased
+   late, where the payoff lives; `--no-hook` to disable); auto-zoom into
+   the motion-energy bounding box when it gains ≥10% (`--no-crop`).
+5. **Speeds** (`analysis.assign_speeds`) — action 1.0x, lag ≈1.7x,
    dead ≈3.2x; `--target N` binary-searches the fast-tier speeds to hit N
    seconds.
-5. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
+6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
    renders purple bold-italic on rounded white boxes + color emoji. A
    saliency map (brightness-dominant, because screens glow in dark-room
    footage) places it over the calmest region inside the TikTok safe zone
    (y between 11% and 78%). `caption.check_caption` warns about wording
    that risks TikTok moderation.
-6. **Audio** — muted by default (the export is silent so a TikTok sound is
+7. **Audio** — muted by default (the export is silent so a TikTok sound is
    added in-app; `render` emits `-an`). `--keep-audio` retains the original
    ambient track; `--music` (`music.generate`) synthesizes a royalty-free
    synthwave/phonk track and `render` ducks it under the ambient audio with
    `amix ... normalize=0`.
-7. **Render** (`render.render`) — one ffmpeg `filter_complex`: per-segment
-   trim/setpts + atempo, concat, lanczos scale into 1080x1920, caption
-   overlay, encode **libx265 main10 crf 18** with the source HLG color tags
-   (`bt2020`/`arib-std-b67`) and `hvc1` tag. `+faststart`.
+8. **Render** (`render.render`) — one ffmpeg `filter_complex`: per-segment
+   trim/setpts + atempo, concat, optional crop, lanczos scale into
+   1080x1920, caption overlay, encode **libx265 main10 crf 18** with
+   `hvc1` tag and **color tags matched to the source** (`render.color_args`:
+   HLG/PQ kept for HDR, bt709 for SDR — never hardcode HLG). `+faststart`.
 
 ## Conventions and constraints
 
 - **Run via the venv**: `venv/bin/python3 -m tokcut …` (or `tokcut` if
   `pip install -e .` was run).
-- **Never strip the color tags** — source is iPhone HLG; encoding without
-  `-color_trc arib-std-b67` makes footage look washed out.
+- **Color tags must match the source** (`render.color_args`) — HLG sources
+  encoded without `arib-std-b67` look washed out, and SDR sources tagged
+  as HLG look washed out too. Never hardcode either direction.
 - Output stays **1080x1920, ≥30fps (keep 60 if source is 60), 10-bit HEVC**
   — quality is a hard requirement.
 - One caption per video, persistent for the entire duration. Make it

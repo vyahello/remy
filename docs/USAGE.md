@@ -20,6 +20,8 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 | `-o / --output` | `<input>_tokcut.mp4` | Output path. |
 | `--target N` | none | Solve speed-ups so the result is ≈ N seconds. Without it, base speeds are used (dead 3.2x, lag 1.7x, action 1x). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region inside the TikTok safe zone, so it never covers the screen/device. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
+| `--hook` / `--no-hook` | on | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. The single biggest retention lever. |
+| `--crop` / `--no-crop` | on | Auto-zoom into the motion-energy bounding box, dropping static margins (desktop wallpaper, window chrome). Only crops when it gains ≥10% — otherwise leaves the frame alone. |
 | `--keep-audio` | off | Keep the original ambient audio. **By default the export is muted** (no audio track) so you add a TikTok sound in-app. |
 | `--music [FILE]` | off | Bake in music (implies sound). Bare flag synthesizes a royalty-free track; pass a path to use your own audio. For off-platform posts. |
 | `--music-style` | synthwave | `synthwave` or `phonk` (the darker, heavier one). |
@@ -93,9 +95,8 @@ about risky terms — heed the warnings:
 
 ## Troubleshooting
 
-- **Washed-out colors** → the input probably wasn't iPhone HLG; the color
-  tags in `tikedit.py:render()` are hardcoded for HLG sources. For SDR
-  sources remove the three `-color_*` arguments.
+- **Washed-out colors** → fixed: output color tags now follow the source
+  (HLG/PQ kept for HDR phone footage, bt709 for SDR screen recordings).
 - **Caption missing emoji** → the glyph isn't in Noto Color Emoji, or the
   char's codepoint is below U+2600 (the simple emoji detector threshold).
 - **Too many tiny speed changes** → raise `MIN_SEG_SEC` in `tikedit.py`.
