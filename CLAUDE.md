@@ -87,6 +87,9 @@ edited clip ready to post (see `docs/IDEAS.md`).
   synthwave/phonk track (for off-platform posts).
 - Use `--dry-run` first when tuning: prints the edit decision list without
   encoding (encode takes minutes).
+- **Run renders sequentially, never in parallel** — two concurrent x265
+  encodes on 1080p60 sources have OOM-killed ffmpeg on this 15 GB machine.
+  The Telegram bot must queue renders one at a time.
 
 ## Develop
 
