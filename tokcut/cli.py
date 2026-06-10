@@ -81,10 +81,14 @@ def plan(
     src = probe(input_path)
     raw_scores, frames = motion_scores(input_path, src)
     scores = smooth(raw_scores)
+    # the last beat of a recording is usually the stop-the-recording
+    # shuffle (alt-tab, reaching for the hotkey) — never include it
+    dur = src["duration"]
+    dur_eff = dur - 2.0 if dur > 20.0 else dur
     runs = trim_dead_ends(
-        to_segments(classify(scores), duration=src["duration"]))
+        to_segments(classify(scores), duration=dur_eff))
 
-    hook_win = pick_hook(scores, src["duration"]) if hook else None
+    hook_win = pick_hook(scores, dur_eff) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
                     if target and hook_win else target)
     segs, est = assign_speeds(runs, solve_target)
