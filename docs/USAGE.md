@@ -20,7 +20,8 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 | `-o / --output` | `<input>_tokcut.mp4` | Output path. |
 | `--target N` | none | Solve speed-ups so the result is ≈ N seconds. Without it, base speeds are used (dead 3.2x, lag 1.7x, action 1x). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region inside the TikTok safe zone, so it never covers the screen/device. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
-| `--music [FILE]` | off | Bare flag synthesizes a royalty-free track; pass a path to use your own audio. Mixed under the ambient sound. |
+| `--keep-audio` | off | Keep the original ambient audio. **By default the export is muted** (no audio track) so you add a TikTok sound in-app. |
+| `--music [FILE]` | off | Bake in music (implies sound). Bare flag synthesizes a royalty-free track; pass a path to use your own audio. For off-platform posts. |
 | `--music-style` | synthwave | `synthwave` or `phonk` (the darker, heavier one). |
 | `--music-bpm N` | 84 | Tempo of the synthesized track. |
 | `--crf N` | 18 | x265 quality (lower = better/bigger). 18 is visually lossless for screen content. |
@@ -38,13 +39,21 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
    (longer target = gentler speed-ups).
 3. Render, check on your phone, post.
 
-## Music: baked-in vs in-app
+## Audio: muted by default
 
-- **In-app TikTok sound (no `--music`)** ranks better — trending sounds
-  drive discovery, and the app won't mute you for copyright. Default to this.
-- **Baked-in (`--music`)** is for when you want a guaranteed vibe, or to
-  post the same clip off-platform. The track is synthesized (zero copyright
-  risk) and ducked under your original audio.
+The export is **silent by default** (no audio stream) because the intended
+workflow is to add a trending sound inside the TikTok app — that ranks
+better for discovery and the app won't mute you for copyright. Just upload
+the clip and tap a sound.
+
+Two opt-outs when you want sound baked in:
+
+- **`--keep-audio`** — keeps your original ambient audio (e.g. real
+  keyboard/room sound) instead of muting.
+- **`--music`** — bakes in a synthesized royalty-free track (synthwave /
+  phonk, zero copyright risk), ducked under the original audio. Use this
+  for posts you'll share **off** TikTok (Reels, Shorts, your site), where
+  there's no in-app sound library.
 
 ## Picking a target duration
 

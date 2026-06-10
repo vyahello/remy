@@ -49,9 +49,11 @@ edited clip ready to post (see `docs/IDEAS.md`).
    footage) places it over the calmest region inside the TikTok safe zone
    (y between 11% and 78%). `caption.check_caption` warns about wording
    that risks TikTok moderation.
-6. **Music** (`music.generate`, optional) — synthesizes a royalty-free
-   dark-synthwave/phonk track to exact length; `render` ducks it under the
-   ambient audio with `amix ... normalize=0`.
+6. **Audio** — muted by default (the export is silent so a TikTok sound is
+   added in-app; `render` emits `-an`). `--keep-audio` retains the original
+   ambient track; `--music` (`music.generate`) synthesizes a royalty-free
+   synthwave/phonk track and `render` ducks it under the ambient audio with
+   `amix ... normalize=0`.
 7. **Render** (`render.render`) — one ffmpeg `filter_complex`: per-segment
    trim/setpts + atempo, concat, lanczos scale into 1080x1920, caption
    overlay, encode **libx265 main10 crf 18** with the source HLG color tags
@@ -69,8 +71,10 @@ edited clip ready to post (see `docs/IDEAS.md`).
   specific about what the viewer is watching, e.g. "How I set this up ⚡".
   Run it past `check_caption` — sensational/policy-sensitive wording can
   get the post flagged/shadowbanned.
-- Music is **off by default** — in-app TikTok sounds rank better. `--music`
-  is opt-in for the baked-in synthwave/phonk track.
+- Audio is **muted by default** — the export has no audio stream so a
+  trending TikTok sound is added in-app (ranks better, no copyright mute).
+  `--keep-audio` retains original ambient; `--music` bakes in the
+  synthwave/phonk track (for off-platform posts).
 - Use `--dry-run` first when tuning: prints the edit decision list without
   encoding (encode takes minutes).
 

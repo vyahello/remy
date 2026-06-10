@@ -16,20 +16,28 @@ def atempo_chain(speed):
     return ",".join(f"atempo={p:.6f}" for p in parts)
 
 
-def build_filtergraph(segs, src, lay, fps, with_music):
-    """Return (filter_complex string, video_label, audio_label|None)."""
+def build_filtergraph(segs, src, lay, fps, with_music=False,
+                      keep_audio=False):
+    """Return (filter_complex string, video_label, audio_label|None).
+
+    Audio is muted by default (the export is meant to receive a TikTok
+    sound in-app). `keep_audio` retains the original ambient track;
+    `with_music` mixes in the music input.
+    """
+    want_ambient = src["audio"] and (with_music or keep_audio)
+
     fc, vlabels, alabels = [], [], []
     for i, (s, e, sp) in enumerate(segs):
         fc.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},"
                   f"setpts=(PTS-STARTPTS)/{sp:.4f}[v{i}]")
         vlabels.append(f"[v{i}]")
-        if src["audio"]:
+        if want_ambient:
             fc.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},"
                       f"asetpts=PTS-STARTPTS,{atempo_chain(sp)}[a{i}]")
             alabels.append(f"[a{i}]")
 
     n = len(segs)
-    if src["audio"]:
+    if want_ambient:
         pairs = "".join(v + a for v, a in zip(vlabels, alabels))
         fc.append(f"{pairs}concat=n={n}:v=1:a=1[vc][amb]")
         ambient = "[amb]"
@@ -61,10 +69,11 @@ def build_filtergraph(segs, src, lay, fps, with_music):
 
 
 def render(path, segs, caption_png, src, lay, out_path,
-           crf=18, preset="medium", music_path=None):
+           crf=18, preset="medium", music_path=None, keep_audio=False):
     fps = min(60, round(src["fps"]))
     fc, vlabel, alabel = build_filtergraph(
-        segs, src, lay, fps, with_music=bool(music_path))
+        segs, src, lay, fps, with_music=bool(music_path),
+        keep_audio=keep_audio)
 
     cmd = ["ffmpeg", "-y", "-v", "warning", "-stats",
            "-i", path, "-i", caption_png]
@@ -73,6 +82,8 @@ def render(path, segs, caption_png, src, lay, out_path,
     cmd += ["-filter_complex", fc, "-map", vlabel]
     if alabel:
         cmd += ["-map", alabel, "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+    else:
+        cmd += ["-an"]  # muted export — add a TikTok sound in-app
     cmd += ["-c:v", "libx265", "-crf", str(crf), "-preset", preset,
             "-profile:v", "main10", "-tag:v", "hvc1",
             "-color_primaries", "bt2020", "-color_trc", "arib-std-b67",

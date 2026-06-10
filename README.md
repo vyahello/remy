@@ -21,8 +21,9 @@ caption, and drop a beat underneath — ready to upload.*
 An auto-editor that turns raw phone footage into tight, high-quality
 vertical TikTok clips. 🎯 Motion analysis drives speed-ramps (boring stretches
 fast-forwarded ⏩, action kept real-time ▶️), a persistent styled caption is
-auto-placed where it won't cover the action 🏷️, and an optional synthesized
-music track 🎧 is mixed under the original audio.
+auto-placed where it won't cover the action 🏷️, and the export is **muted by
+default** 🔇 so you add a trending TikTok sound in-app (optional synthesized
+music if you want it baked in).
 
 Works for any talking-to-camera, screen-recording, tutorial, vlog, or
 process video where there's dead time to trim and a moment worth keeping. 🎬
@@ -34,7 +35,7 @@ process video where there's dead time to trim and a moment worth keeping. 🎬
 | ⏩ **Kills dead air** | Fast-forwards the parts where you're just reading docs; keeps the payoff at 1x |
 | 🏷️ **Smart captions** | Purple-on-white sticker text, auto-placed over the calmest part of the frame so it never hides your screen |
 | 🛡️ **Won't get you flagged** | Warns about wording TikTok's moderation tends to penalize before you post |
-| 🎧 **Instant vibe** | Generates a royalty-free music bed (synthwave / phonk) — zero copyright strikes |
+| 🔇 **Ready for in-app sound** | Exports silent by default so you tap a trending TikTok sound — or bake in royalty-free music with `--music` |
 | 📱 **Phone-grade quality** | 1080×1920, 10-bit HEVC, iPhone HLG color preserved — survives TikTok's re-encode |
 
 ## 📦 Install
@@ -53,10 +54,13 @@ System requirements: `ffmpeg`/`ffprobe` with libx265, fonts
 # preview the cut plan (instant, no encode)
 tokcut clip.MOV -c "How I set this up ⚡" --target 50 --dry-run
 
-# render, no music (you add a trending sound in TikTok)
+# render — muted by default, you add a trending sound in TikTok
 tokcut clip.MOV -c "How I set this up ⚡" --target 50
 
-# render with a synthesized phonk track baked in
+# keep your original ambient audio instead of muting
+tokcut clip.MOV -c "How I set this up ⚡" --target 50 --keep-audio
+
+# bake in a synthesized phonk track (for off-platform posts)
 tokcut clip.MOV -c "How I set this up ⚡" --target 50 --music --music-style phonk
 
 # or your own audio file
@@ -81,9 +85,10 @@ tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
 5. **Caption** — Pillow renders purple bold-italic on rounded white boxes
    (emoji supported). A saliency map places it over the calmest region
    inside TikTok's UI safe zone, so it never covers the screen/device.
-6. **Music** (optional) — `tokcut.music` synthesizes a royalty-free
-   dark-synthwave/phonk track to exact length and ducks it under the
-   ambient audio. Zero copyright risk.
+6. **Audio** — muted by default (silent export for in-app TikTok sound).
+   `--keep-audio` retains the original ambient; `--music` bakes in a
+   royalty-free synthwave/phonk track synthesized by `tokcut.music` (zero
+   copyright risk).
 7. **Render** — one ffmpeg `filter_complex`: per-segment trim/setpts +
    atempo, concat, lanczos scale into 1080x1920, caption overlay, encode
    **libx265 main10 crf 18** preserving the iPhone HLG color tags.

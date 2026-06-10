@@ -24,7 +24,7 @@ from .render import render
 
 def build_parser():
     ap = argparse.ArgumentParser(
-        prog="tokcut", description="Personal auto-editor for TikTok clips")
+        prog="tokcut", description="Auto-editor for vertical TikTok clips")
     ap.add_argument("input")
     ap.add_argument("-c", "--caption", required=True,
                     help="Persistent caption text (emoji supported)")
@@ -34,9 +34,13 @@ def build_parser():
     ap.add_argument("--caption-pos", choices=["auto", "top", "bottom"],
                     default="auto",
                     help="auto = place over the calmest region (default)")
+    ap.add_argument("--keep-audio", action="store_true",
+                    help="Keep the original ambient audio. By default the "
+                         "export is muted so you add a TikTok sound in-app.")
     ap.add_argument("--music", nargs="?", const="__auto__", default=None,
-                    help="Add music: bare flag synthesizes a track; "
-                         "or pass a path to your own audio file")
+                    help="Bake in music (implies sound): bare flag "
+                         "synthesizes a track; or pass a path to your "
+                         "own audio file. For off-platform posts.")
     ap.add_argument("--music-style", choices=["synthwave", "phonk"],
                     default="synthwave")
     ap.add_argument("--music-bpm", type=int, default=84)
@@ -94,8 +98,12 @@ def main(argv=None):
             music_path = args.music
             print(f"music: {music_path}")
 
+        if not music_path:
+            print("audio: original ambient (--keep-audio)" if args.keep_audio
+                  else "audio: muted (add a TikTok sound in-app)")
+
         render(args.input, segs, cap_png, src, lay, out,
-               args.crf, args.preset, music_path)
+               args.crf, args.preset, music_path, args.keep_audio)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print(f"done: {out}")
