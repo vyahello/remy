@@ -11,7 +11,7 @@ import numpy as np
 SR = 44100
 
 # minor-key root notes (Hz) for a moody, atmospheric feel
-SCALE = {
+SCALE: dict[str, list[float]] = {
     # A minor pentatonic
     "synthwave": [55.00, 65.41, 73.42, 82.41, 98.00],
     # G minor, lower and heavier
@@ -19,7 +19,7 @@ SCALE = {
 }
 
 
-def _adsr(n, attack=0.01, release=0.1):
+def _adsr(n: int, attack: float = 0.01, release: float = 0.1) -> np.ndarray:
     env = np.ones(n)
     a = min(int(attack * SR), n)
     r = min(int(release * SR), n - a)
@@ -30,12 +30,12 @@ def _adsr(n, attack=0.01, release=0.1):
     return env
 
 
-def _saw(freq, n):
+def _saw(freq: float, n: int) -> np.ndarray:
     t = np.arange(n) / SR
     return 2 * (t * freq - np.floor(0.5 + t * freq))
 
 
-def _supersaw(freq, n, detune=0.012):
+def _supersaw(freq: float, n: int, detune: float = 0.012) -> np.ndarray:
     """Three slightly detuned saws — the classic synthwave pad."""
     out = np.zeros(n)
     for d in (-detune, 0.0, detune):
@@ -43,14 +43,14 @@ def _supersaw(freq, n, detune=0.012):
     return out / 3
 
 
-def _kick(n):
+def _kick(n: int) -> np.ndarray:
     t = np.arange(n) / SR
     freq = 110 * np.exp(-t * 22) + 45
     body = np.sin(2 * np.pi * np.cumsum(freq) / SR)
     return body * np.exp(-t * 9)
 
 
-def _lowpass(sig, cutoff=2200):
+def _lowpass(sig: np.ndarray, cutoff: float = 2200) -> np.ndarray:
     """One-pole low-pass for warmth."""
     rc = 1.0 / (2 * np.pi * cutoff)
     alpha = (1 / SR) / (rc + 1 / SR)
@@ -62,7 +62,9 @@ def _lowpass(sig, cutoff=2200):
     return out
 
 
-def generate(duration, bpm=84, style="synthwave", seed=0):
+def generate(
+    duration: float, bpm: int = 84, style: str = "synthwave", seed: int = 0
+) -> np.ndarray:
     """Return a mono float32 track of `duration` seconds in [-1, 1]."""
     rng = np.random.default_rng(seed)
     n = int(duration * SR)
@@ -119,7 +121,7 @@ def generate(duration, bpm=84, style="synthwave", seed=0):
     return track.astype(np.float32)
 
 
-def write_wav(samples, path):
+def write_wav(samples: np.ndarray, path: str) -> None:
     """Write a mono float track to a 16-bit PCM WAV."""
     import wave
     pcm = np.clip(samples, -1, 1)

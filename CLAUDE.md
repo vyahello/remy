@@ -22,6 +22,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 | `tokcut/music.py` | procedural dark-synthwave/phonk generator (numpy) |
 | `tokcut/render.py` | ffmpeg filtergraph builder + encode |
 | `tokcut/cli.py` | argparse entry point (`python -m tokcut` / `tokcut`) |
+| `tokcut/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
 | `tests/` | pytest suite — pure logic, no ffmpeg/network needed (one font-gated test) |
 | `docs/USAGE.md` | how to run it |
 | `docs/IDEAS.md` | content/format brainstorm + Telegram bot + music roadmap |
@@ -82,12 +83,15 @@ edited clip ready to post (see `docs/IDEAS.md`).
 
 ```bash
 venv/bin/pip install -e ".[dev]"
-venv/bin/pytest          # 30 tests, < 1s, no ffmpeg required
+venv/bin/pytest          # 33 tests, < 1s, no ffmpeg required
 venv/bin/ruff check tokcut tests
+venv/bin/mypy            # fully typed; must stay clean
 ```
 
-CI (`.github/workflows/ci.yml`) runs ruff + pytest on 3.11–3.13. The deploy
-stage is stubbed (`if: ... && false`) until the VPS/Telegram bot exists.
+The codebase is fully type-hinted and mypy-clean — keep it that way when
+editing. CI (`.github/workflows/ci.yml`) runs ruff + mypy + pytest on
+3.11–3.13. The deploy stage is stubbed (`if: ... && false`) until the
+VPS/Telegram bot exists.
 
 ## Reproduce the sample result
 

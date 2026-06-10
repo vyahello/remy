@@ -5,6 +5,8 @@ import subprocess
 
 import numpy as np
 
+from .types import Segment, SourceInfo, SpeedSegment
+
 SAMPLE_FPS = 6          # motion-analysis sampling rate
 ANALYZE_W = 120         # analysis frame width (tiny = fast)
 SMOOTH_SEC = 1.5        # smoothing window for motion scores
@@ -14,7 +16,7 @@ SPEED_DEAD, SPEED_LAG, SPEED_ACTION = 3.2, 1.7, 1.0
 MAX_SPEED = 6.0
 
 
-def probe(path):
+def probe(path: str) -> SourceInfo:
     """Return dict with w/h (rotation-corrected), duration, fps, audio."""
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_format", "-show_streams",
@@ -34,7 +36,9 @@ def probe(path):
     return {"w": w, "h": h, "duration": dur, "fps": fps, "audio": has_audio}
 
 
-def motion_scores(path, src):
+def motion_scores(
+    path: str, src: SourceInfo
+) -> tuple[np.ndarray, np.ndarray]:
     """Sample tiny gray frames; return (per-frame motion score, frames)."""
     aw = ANALYZE_W
     ah = max(2, int(round(src["h"] * aw / src["w"] / 2)) * 2)
@@ -43,6 +47,7 @@ def motion_scores(path, src):
          "-vf", f"fps={SAMPLE_FPS},scale={aw}:{ah},format=gray",
          "-f", "rawvideo", "pipe:1"],
         stdout=subprocess.PIPE)
+    assert proc.stdout is not None
     raw = proc.stdout.read()
     proc.wait()
     n = len(raw) // (aw * ah)
@@ -52,7 +57,7 @@ def motion_scores(path, src):
     return np.concatenate([[diffs[0]], diffs]), frames
 
 
-def saliency_map(frames):
+def saliency_map(frames: np.ndarray) -> np.ndarray:
     """Where the action lives, averaged over the video.
 
     Brightness dominates: in dark-room desk footage the content the
@@ -64,20 +69,20 @@ def saliency_map(frames):
     gy, gx = np.gradient(mean_frame)
     edges = np.hypot(gx, gy)
 
-    def norm(a):
+    def norm(a: np.ndarray) -> np.ndarray:
         m = np.percentile(a, 98)
         return np.clip(a / m, 0, 1) if m > 0 else a
 
     return 0.3 * norm(motion) + 0.2 * norm(edges) + 0.5 * norm(mean_frame)
 
 
-def smooth(scores):
+def smooth(scores: np.ndarray) -> np.ndarray:
     win = max(1, int(SMOOTH_SEC * SAMPLE_FPS))
     kernel = np.ones(win) / win
     return np.convolve(scores, kernel, mode="same")
 
 
-def classify(scores):
+def classify(scores: np.ndarray) -> np.ndarray:
     """Per-sample tier: 0=dead, 1=lag, 2=action."""
     lo, hi = np.percentile(scores, [PCT_LOW, PCT_HIGH])
     tiers = np.full(len(scores), 1, dtype=int)
@@ -86,16 +91,18 @@ def classify(scores):
     return tiers
 
 
-def to_segments(tiers, sample_fps=SAMPLE_FPS):
+def to_segments(
+    tiers: np.ndarray, sample_fps: int = SAMPLE_FPS
+) -> list[Segment]:
     """Collapse per-sample tiers into [start, end, tier] runs (seconds)."""
-    segs = []
+    segs: list[Segment] = []
     start = 0
     for i in range(1, len(tiers) + 1):
         if i == len(tiers) or tiers[i] != tiers[start]:
             segs.append([start / sample_fps, i / sample_fps,
                          int(tiers[start])])
             start = i
-    merged = []
+    merged: list[Segment] = []
     for seg in segs:
         if merged and (seg[1] - seg[0] < MIN_SEG_SEC
                        or seg[2] == merged[-1][2]):
@@ -108,15 +115,17 @@ def to_segments(tiers, sample_fps=SAMPLE_FPS):
     return merged
 
 
-def assign_speeds(segs, target=None):
+def assign_speeds(
+    segs: list[Segment], target: float | None = None
+) -> tuple[list[SpeedSegment], float]:
     """Map tiers to speeds; optionally solve for a target duration.
 
     Returns ([(start, end, speed)], estimated_output_duration).
     """
     speeds = {0: SPEED_DEAD, 1: SPEED_LAG, 2: SPEED_ACTION}
 
-    def out_dur(sp):
-        return sum((e - s) / sp[t] for s, e, t in segs)
+    def out_dur(sp: dict[int, float]) -> float:
+        return sum((e - s) / sp[int(t)] for s, e, t in segs)
 
     if target:
         # binary-search a multiplier applied to the dead/lag speeds
@@ -131,4 +140,5 @@ def assign_speeds(segs, target=None):
             else:
                 hi_m = m
         speeds = sp
-    return [(s, e, speeds[t]) for s, e, t in segs], out_dur(speeds)
+    out = [(s, e, speeds[int(t)]) for s, e, t in segs]
+    return out, out_dur(speeds)

@@ -6,6 +6,8 @@ import shutil
 import sys
 import tempfile
 
+import numpy as np
+
 from . import __version__
 from .analysis import (
     assign_speeds,
@@ -20,9 +22,10 @@ from .caption import check_caption, make_caption
 from .layout import compute_layout
 from .music import generate, write_wav
 from .render import render
+from .types import SourceInfo, SpeedSegment
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="tokcut", description="Auto-editor for vertical TikTok clips")
     ap.add_argument("input")
@@ -53,7 +56,9 @@ def build_parser():
     return ap
 
 
-def plan(input_path, caption, target):
+def plan(
+    input_path: str, target: float | None
+) -> tuple[SourceInfo, list[SpeedSegment], float, np.ndarray]:
     """Run analysis only; return (src, segments, est_duration, frames)."""
     src = probe(input_path)
     raw_scores, frames = motion_scores(input_path, src)
@@ -62,14 +67,14 @@ def plan(input_path, caption, target):
     return src, segs, est, frames
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     out = args.output or os.path.splitext(args.input)[0] + "_tokcut.mp4"
 
     for warning in check_caption(args.caption):
         print(f"⚠ caption check: {warning}", file=sys.stderr)
 
-    src, segs, est, frames = plan(args.input, args.caption, args.target)
+    src, segs, est, frames = plan(args.input, args.target)
     print(f"source: {src['w']}x{src['h']}  {src['duration']:.1f}s "
           f"@ {src['fps']:.0f}fps")
     print(f"edit plan ({len(segs)} segments, ~{est:.1f}s output):")
@@ -87,7 +92,7 @@ def main(argv=None):
         lay = compute_layout(src, cap_size, args.caption_pos, sal)
         print(f"caption at y={lay['cap_y']} ({args.caption_pos})")
 
-        music_path = None
+        music_path: str | None = None
         if args.music == "__auto__":
             music_path = os.path.join(tmp, "music.wav")
             write_wav(generate(max(est, 1.0) + 2, bpm=args.music_bpm,

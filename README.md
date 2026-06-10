@@ -103,6 +103,7 @@ tokcut/            package
   music.py           procedural dark-synthwave/phonk generator
   render.py          ffmpeg filtergraph + encode
   cli.py             argparse entry point
+  types.py           shared TypedDicts + type aliases
 tests/             pytest suite (logic-level, no GPU/network needed)
 docs/              USAGE.md, IDEAS.md
 .github/workflows/ CI (lint + test; deploy stage stubbed for the VPS)
@@ -113,6 +114,7 @@ docs/              USAGE.md, IDEAS.md
 ```bash
 venv/bin/pytest          # run tests
 venv/bin/ruff check .    # lint
+venv/bin/mypy            # type-check (codebase is fully typed)
 ```
 
 ## 🗺️ Roadmap

@@ -5,13 +5,13 @@ from PIL import Image, ImageDraw, ImageFont
 FONT_TEXT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
 FONT_EMOJI = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
 
-PURPLE = (147, 88, 235, 255)
-BOX_FILL = (252, 250, 255, 238)
+PURPLE: tuple[int, int, int, int] = (147, 88, 235, 255)
+BOX_FILL: tuple[int, int, int, int] = (252, 250, 255, 238)
 
 # TikTok OCRs on-screen text; these terms commonly trigger moderation or
 # reduced reach. Keep captions descriptive rather than sensational. The
 # list is conservative — edit it to fit your own content.
-RISKY_TERMS = {
+RISKY_TERMS: dict[str, str | None] = {
     "hack": "set up / build / make",
     "hacking": "building / tinkering",
     "hacker": "creator / builder",
@@ -30,10 +30,10 @@ RISKY_TERMS = {
 MAX_CAPTION_CHARS = 48
 
 
-def check_caption(text):
+def check_caption(text: str) -> list[str]:
     """Warn about terms likely to get the post flagged. Returns warnings."""
     low = text.lower()
-    warnings = []
+    warnings: list[str] = []
     for term, alt in RISKY_TERMS.items():
         if term in low:
             hint = f' — try "{alt}"' if alt else ""
@@ -44,12 +44,13 @@ def check_caption(text):
     return warnings
 
 
-def balance_lines(text):
+def balance_lines(text: str) -> list[str]:
     """Split text into up to two visually balanced lines."""
     words = text.split()
     if len(words) < 3:
         return [text]
-    best, best_diff = None, float("inf")
+    best: list[str] = [text]
+    best_diff = float("inf")
     for i in range(1, len(words)):
         a, b = " ".join(words[:i]), " ".join(words[i:])
         diff = abs(len(a) - len(b))
@@ -58,9 +59,9 @@ def balance_lines(text):
     return best
 
 
-def split_runs(text):
-    """Split a line into (is_emoji, chunk) runs."""
-    runs = []
+def split_runs(text: str) -> list[list]:
+    """Split a line into [is_emoji, chunk] runs."""
+    runs: list[list] = []
     for ch in text:
         is_emoji = ord(ch) > 0x2600
         if runs and runs[-1][0] == is_emoji:
@@ -70,7 +71,7 @@ def split_runs(text):
     return runs
 
 
-def _emoji_tile(ch, height):
+def _emoji_tile(ch: str, height: int) -> Image.Image | None:
     """Render one color-emoji glyph and scale it to the text line height."""
     f = ImageFont.truetype(FONT_EMOJI, 109)  # CBDT strike size
     img = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
@@ -80,10 +81,13 @@ def _emoji_tile(ch, height):
         return None
     img = img.crop(box)
     scale = height / img.height
-    return img.resize((max(1, int(img.width * scale)), height), Image.LANCZOS)
+    return img.resize((max(1, int(img.width * scale)), height),
+                      Image.Resampling.LANCZOS)
 
 
-def make_caption(text, out_path, font_size=54):
+def make_caption(
+    text: str, out_path: str, font_size: int = 54
+) -> tuple[int, int]:
     """Stacked rounded white boxes with purple bold-italic text + emoji.
 
     Returns (width, height) of the saved PNG.
@@ -95,9 +99,10 @@ def make_caption(text, out_path, font_size=54):
     line_h = ascent + descent
 
     measurer = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
-    rendered = []
+    rendered: list[tuple[list, int]] = []
     for line in lines:
-        parts, width = [], 0
+        parts: list = []
+        width = 0
         for is_emoji, chunk in split_runs(line):
             if is_emoji:
                 for ch in chunk.strip():

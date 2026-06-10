@@ -3,11 +3,12 @@
 import subprocess
 
 from .layout import OUT_H, OUT_W
+from .types import Layout, SourceInfo, SpeedSegment
 
 
-def atempo_chain(speed):
+def atempo_chain(speed: float) -> str:
     """ffmpeg atempo accepts 0.5..2.0; chain factors for larger speeds."""
-    parts = []
+    parts: list[float] = []
     s = speed
     while s > 2.0:
         parts.append(2.0)
@@ -16,8 +17,14 @@ def atempo_chain(speed):
     return ",".join(f"atempo={p:.6f}" for p in parts)
 
 
-def build_filtergraph(segs, src, lay, fps, with_music=False,
-                      keep_audio=False):
+def build_filtergraph(
+    segs: list[SpeedSegment],
+    src: SourceInfo,
+    lay: Layout,
+    fps: int,
+    with_music: bool = False,
+    keep_audio: bool = False,
+) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
 
     Audio is muted by default (the export is meant to receive a TikTok
@@ -26,7 +33,9 @@ def build_filtergraph(segs, src, lay, fps, with_music=False,
     """
     want_ambient = src["audio"] and (with_music or keep_audio)
 
-    fc, vlabels, alabels = [], [], []
+    fc: list[str] = []
+    vlabels: list[str] = []
+    alabels: list[str] = []
     for i, (s, e, sp) in enumerate(segs):
         fc.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},"
                   f"setpts=(PTS-STARTPTS)/{sp:.4f}[v{i}]")
@@ -68,15 +77,25 @@ def build_filtergraph(segs, src, lay, fps, with_music=False,
     return ";".join(fc), "[vout]", audio_out
 
 
-def render(path, segs, caption_png, src, lay, out_path,
-           crf=18, preset="medium", music_path=None, keep_audio=False):
+def render(
+    path: str,
+    segs: list[SpeedSegment],
+    caption_png: str,
+    src: SourceInfo,
+    lay: Layout,
+    out_path: str,
+    crf: int = 18,
+    preset: str = "medium",
+    music_path: str | None = None,
+    keep_audio: bool = False,
+) -> str:
     fps = min(60, round(src["fps"]))
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
         keep_audio=keep_audio)
 
-    cmd = ["ffmpeg", "-y", "-v", "warning", "-stats",
-           "-i", path, "-i", caption_png]
+    cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats",
+                      "-i", path, "-i", caption_png]
     if music_path:
         cmd += ["-stream_loop", "-1", "-i", music_path]
     cmd += ["-filter_complex", fc, "-map", vlabel]
