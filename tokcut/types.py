@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 
-class SourceInfo(TypedDict):
+class SourceInfo(TypedDict, total=False):
     """Probed properties of a source video (see analysis.probe)."""
 
     w: int
@@ -11,6 +11,8 @@ class SourceInfo(TypedDict):
     duration: float
     fps: float
     audio: bool
+    transfer: str    # color transfer (e.g. "bt709", "arib-std-b67")
+    primaries: str   # color primaries (e.g. "bt709", "bt2020")
 
 
 class Layout(TypedDict):

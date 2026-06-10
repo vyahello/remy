@@ -17,6 +17,21 @@ def atempo_chain(speed: float) -> str:
     return ",".join(f"atempo={p:.6f}" for p in parts)
 
 
+def color_args(src: SourceInfo) -> list[str]:
+    """Color metadata for the encode, matched to the source.
+
+    HDR sources (iPhone HLG / PQ) keep their wide-gamut tags; everything
+    else is tagged plain SDR bt709. Tagging SDR content as HLG (the old
+    hardcoded behavior) made it look washed out on phones.
+    """
+    transfer = src.get("transfer", "")
+    if transfer in ("arib-std-b67", "smpte2084"):
+        return ["-color_primaries", "bt2020", "-color_trc", transfer,
+                "-colorspace", "bt2020nc"]
+    return ["-color_primaries", "bt709", "-color_trc", "bt709",
+            "-colorspace", "bt709"]
+
+
 def build_filtergraph(
     segs: list[SpeedSegment],
     src: SourceInfo,
@@ -24,6 +39,7 @@ def build_filtergraph(
     fps: int,
     with_music: bool = False,
     keep_audio: bool = False,
+    crop: tuple[int, int, int, int] | None = None,
 ) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
 
@@ -55,7 +71,8 @@ def build_filtergraph(
         ambient = None
 
     vw, vh, vx, vy = lay["vw"], lay["vh"], lay["vx"], lay["vy"]
-    fc.append(f"[vc]fps={fps},scale={vw}:{vh}:flags=lanczos,"
+    crop_f = f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}," if crop else ""
+    fc.append(f"[vc]{crop_f}fps={fps},scale={vw}:{vh}:flags=lanczos,"
               f"pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
     fc.append(f"[base][1:v]overlay={lay['cap_x']}:{lay['cap_y']},"
               f"format=yuv420p10le[vout]")
@@ -88,11 +105,12 @@ def render(
     preset: str = "medium",
     music_path: str | None = None,
     keep_audio: bool = False,
+    crop: tuple[int, int, int, int] | None = None,
 ) -> str:
     fps = min(60, round(src["fps"]))
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
-        keep_audio=keep_audio)
+        keep_audio=keep_audio, crop=crop)
 
     cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats",
                       "-i", path, "-i", caption_png]
@@ -105,8 +123,7 @@ def render(
         cmd += ["-an"]  # muted export — add a TikTok sound in-app
     cmd += ["-c:v", "libx265", "-crf", str(crf), "-preset", preset,
             "-profile:v", "main10", "-tag:v", "hvc1",
-            "-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
-            "-colorspace", "bt2020nc",
+            *color_args(src),
             "-movflags", "+faststart", out_path]
     subprocess.run(cmd, check=True)
     return out_path

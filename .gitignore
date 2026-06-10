@@ -30,6 +30,6 @@ htmlcov/
 *.swp
 
 # Local config / secrets (Telegram bot token, etc.)
-.env
+.env*
 *.local
 config.local.*

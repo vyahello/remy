@@ -33,7 +33,9 @@ def probe(path: str) -> SourceInfo:
     dur = float(v.get("duration") or info["format"]["duration"])
     num, den = v.get("avg_frame_rate", "60/1").split("/")
     fps = float(num) / float(den) if float(den) else 60.0
-    return {"w": w, "h": h, "duration": dur, "fps": fps, "audio": has_audio}
+    return {"w": w, "h": h, "duration": dur, "fps": fps, "audio": has_audio,
+            "transfer": v.get("color_transfer", "") or "",
+            "primaries": v.get("color_primaries", "") or ""}
 
 
 def motion_scores(
@@ -51,6 +53,10 @@ def motion_scores(
     raw = proc.stdout.read()
     proc.wait()
     n = len(raw) // (aw * ah)
+    if n < 2:
+        raise ValueError(
+            "could not decode at least two analysis frames — "
+            "is this a valid video file?")
     frames = np.frombuffer(raw[: n * aw * ah], dtype=np.uint8)
     frames = frames.reshape(n, ah, aw).astype(np.int16)
     diffs = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
@@ -85,6 +91,11 @@ def smooth(scores: np.ndarray) -> np.ndarray:
 def classify(scores: np.ndarray) -> np.ndarray:
     """Per-sample tier: 0=dead, 1=lag, 2=action."""
     lo, hi = np.percentile(scores, [PCT_LOW, PCT_HIGH])
+    # near-uniform motion (e.g. a constantly-updating screen recording):
+    # percentile tiers would just amplify noise — treat it as one tier and
+    # let the target-duration solver apply a single global speed instead.
+    if hi - lo < 1e-6 or hi < lo * 1.3:
+        return np.full(len(scores), 1, dtype=int)
     tiers = np.full(len(scores), 1, dtype=int)
     tiers[scores < lo] = 0
     tiers[scores > hi] = 2
@@ -92,7 +103,9 @@ def classify(scores: np.ndarray) -> np.ndarray:
 
 
 def to_segments(
-    tiers: np.ndarray, sample_fps: int = SAMPLE_FPS
+    tiers: np.ndarray,
+    sample_fps: int = SAMPLE_FPS,
+    duration: float | None = None,
 ) -> list[Segment]:
     """Collapse per-sample tiers into [start, end, tier] runs (seconds)."""
     segs: list[Segment] = []
@@ -112,7 +125,121 @@ def to_segments(
     if len(merged) > 1 and merged[0][1] - merged[0][0] < MIN_SEG_SEC:
         merged[1][0] = merged[0][0]
         merged.pop(0)
+    if duration is not None and merged:
+        # sampling rounds the tail up past the real end of the file
+        merged[-1][1] = min(merged[-1][1], duration)
     return merged
+
+
+def trim_dead_ends(segs: list[Segment]) -> list[Segment]:
+    """Open and close on action: hard-trim dead footage at the edges.
+
+    A boring opener kills retention in the first second and a boring
+    ending kills the loop/rewatch, so instead of merely fast-forwarding
+    leading/trailing dead segments, cut them — keeping a short beat of
+    context (1.5s lead-in, 1.0s tail).
+    """
+    if segs and segs[0][2] == 0 and segs[0][1] - segs[0][0] > 2.0:
+        segs[0][0] = segs[0][1] - 1.5
+    if segs and segs[-1][2] == 0 and segs[-1][1] - segs[-1][0] > 1.5:
+        segs[-1][1] = segs[-1][0] + 1.0
+    return segs
+
+
+def pick_hook(
+    scores: np.ndarray,
+    duration: float,
+    hook_sec: float = 1.3,
+    skip_head: float = 4.0,
+    sample_fps: int = SAMPLE_FPS,
+) -> tuple[float, float] | None:
+    """Find the cold-open moment: the strongest beat, biased late.
+
+    Returns a (start, end) window to prepend as a teaser — "show the
+    payoff first, then how I got there". The payoff of a process video
+    usually lives near the end, so later peaks are weighted up; the
+    opening seconds are skipped entirely (a hook from the existing
+    opening adds nothing). None when the video is too short to bother.
+    """
+    if duration < skip_head + 2 * hook_sec:
+        return None
+    # progress ramp: a peak at the end weighs 2.5x one at the start
+    weighted = scores * np.linspace(0.4, 1.0, len(scores))
+    lo = int(skip_head * sample_fps)
+    peak = lo + int(np.argmax(weighted[lo:]))
+    t_peak = peak / sample_fps
+    start = min(max(0.0, t_peak - hook_sec / 2), duration - hook_sec)
+    return start, start + hook_sec
+
+
+def _mass_bounds(marginal: np.ndarray, keep: float) -> tuple[int, int]:
+    """Smallest [lo, hi] index range holding `keep` of the marginal mass.
+
+    Trims whichever end currently contributes less, so faint widespread
+    motion (animated wallpaper, noise) is shaved while the bulk of the
+    action is kept.
+    """
+    lo, hi = 0, len(marginal) - 1
+    budget = (1.0 - keep) * float(marginal.sum())
+    removed = 0.0
+    while lo < hi:
+        side = lo if marginal[lo] <= marginal[hi] else hi
+        if removed + marginal[side] > budget:
+            break
+        removed += float(marginal[side])
+        if side == lo:
+            lo += 1
+        else:
+            hi -= 1
+    return lo, hi
+
+
+def content_crop(
+    frames: np.ndarray,
+    src: SourceInfo,
+    min_keep: float = 0.55,
+    keep_mass: float = 0.96,
+    pad_px: int = 16,
+) -> tuple[int, int, int, int] | None:
+    """Zoom into where the action happens.
+
+    Screen recordings and wide shots waste pixels on static margins
+    (desktop wallpaper, window chrome); on a 1080x1920 canvas that makes
+    the content small and unreadable. This finds the smallest box holding
+    ~keep_mass of the video's total motion energy per axis and returns an
+    (x, y, w, h) crop in source pixels — or None when cropping wouldn't
+    gain at least ~10% (an honest no-crop beats a silly one).
+    """
+    f = frames.astype(np.float32)
+    motion = np.abs(np.diff(f, axis=0)).mean(axis=0)
+    if float(motion.sum()) <= 0:
+        return None
+    r0, r1 = _mass_bounds(motion.sum(axis=1), keep_mass)
+    c0, c1 = _mass_bounds(motion.sum(axis=0), keep_mass)
+
+    ah, aw = motion.shape
+    sx, sy = src["w"] / aw, src["h"] / ah
+    x0 = max(0, int(c0 * sx) - pad_px)
+    x1 = min(src["w"], int((c1 + 1) * sx) + pad_px)
+    y0 = max(0, int(r0 * sy) - pad_px)
+    y1 = min(src["h"], int((r1 + 1) * sy) + pad_px)
+
+    # never zoom in absurdly far — keep at least min_keep of each axis
+    min_w, min_h = int(src["w"] * min_keep), int(src["h"] * min_keep)
+    if x1 - x0 < min_w:
+        cx = (x0 + x1) // 2
+        x0 = max(0, min(cx - min_w // 2, src["w"] - min_w))
+        x1 = x0 + min_w
+    if y1 - y0 < min_h:
+        cy = (y0 + y1) // 2
+        y0 = max(0, min(cy - min_h // 2, src["h"] - min_h))
+        y1 = y0 + min_h
+
+    w = (x1 - x0) // 2 * 2
+    h = (y1 - y0) // 2 * 2
+    if w * h >= 0.90 * src["w"] * src["h"]:
+        return None  # not enough gain to be worth a crop
+    return x0, y0, w, h
 
 
 def assign_speeds(
