@@ -127,3 +127,52 @@ def test_fallback_shorter_longer():
     assert fallback_updates("make it shorter", 50.0) == {"target": 40.0}
     assert fallback_updates("a bit longer please", 50.0) == {"target": 60.0}
     assert fallback_updates("different caption", 50.0) == {}
+
+
+# ------------------------------------------------------------- tweaks
+
+def test_tweak_updates_length():
+    from tokcut.bot.session import EditParams, tweak_updates
+    p = EditParams(target=40.0)
+    assert tweak_updates("shorter", p) == {"target": 32.0}
+    assert tweak_updates("longer", p) == {"target": 50.0}
+
+
+def test_tweak_updates_auto_target_uses_sweet_spot():
+    from tokcut.analysis import AUTO_SWEET
+    from tokcut.bot.session import EditParams, tweak_updates
+    p = EditParams()  # target None = auto
+    assert tweak_updates("shorter", p) == {"target": AUTO_SWEET * 0.8}
+
+
+def test_tweak_updates_toggles_and_music():
+    from tokcut.bot.session import EditParams, tweak_updates
+    p = EditParams()
+    assert tweak_updates("hook", p) == {"hook": False}
+    assert tweak_updates("crop", p) == {"crop": False}
+    assert tweak_updates("phonk", p) == {"music": "phonk"}
+    assert tweak_updates("nomusic", p) == {"music": "off"}
+
+
+def test_tweak_updates_style_cycles():
+    from tokcut.bot.session import EditParams, tweak_updates
+    from tokcut.caption import STYLES
+    order = list(STYLES)
+    p = EditParams(style=order[0])
+    assert tweak_updates("style", p) == {"style": order[1]}
+    p.style = order[-1]
+    assert tweak_updates("style", p) == {"style": order[0]}
+
+
+def test_tweak_updates_unknown_key():
+    from tokcut.bot.session import EditParams, tweak_updates
+    assert tweak_updates("explode", EditParams()) == {}
+
+
+def test_tweaks_pass_validation():
+    from tokcut.bot.session import EditParams, tweak_updates
+    p = EditParams(target=15.0)
+    for key in ("shorter", "longer", "hook", "crop", "phonk",
+                "synthwave", "nomusic", "style", "newcaption"):
+        raw = tweak_updates(key, p)
+        assert validate_updates(raw), f"{key} produced nothing valid"

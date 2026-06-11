@@ -29,6 +29,7 @@ from ..judge import (
     interpret_feedback,
     review_output,
     suggest_caption,
+    suggest_captions,
 )
 from .config import BotConfig, is_allowed, load_config
 from .pipeline import derive_caption, friendly_progress
@@ -37,6 +38,7 @@ from .session import (
     apply_updates,
     cleanup_files,
     fallback_updates,
+    tweak_updates,
     validate_updates,
 )
 
@@ -44,10 +46,39 @@ log = logging.getLogger("tokcut.bot")
 
 APPROVE = "approve"
 REDO = "redo"
+TWEAK = "tweak:"
 VERDICT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("✅ Approve", callback_data=APPROVE),
     InlineKeyboardButton("🔁 Redo", callback_data=REDO),
 ]])
+
+
+def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
+    """Quick-tap tweaks; free text always works as well."""
+    p = session.params
+    rows = [
+        [InlineKeyboardButton("⚡ Shorter", callback_data=TWEAK + "shorter"),
+         InlineKeyboardButton("🐢 Longer", callback_data=TWEAK + "longer")],
+        [InlineKeyboardButton(
+            "🪝 Cold open " + ("off" if p.hook else "on"),
+            callback_data=TWEAK + "hook"),
+         InlineKeyboardButton(
+            "🔍 Zoom " + ("off" if p.crop else "on"),
+            callback_data=TWEAK + "crop")],
+        [InlineKeyboardButton("🥁 Phonk", callback_data=TWEAK + "phonk"),
+         InlineKeyboardButton("🎹 Synthwave",
+                              callback_data=TWEAK + "synthwave"),
+         InlineKeyboardButton("🔇 No music",
+                              callback_data=TWEAK + "nomusic")],
+    ]
+    if session.caption:  # vertical exports only — landscape has none
+        rows.append([
+            InlineKeyboardButton("✍️ New caption",
+                                 callback_data=TWEAK + "newcaption"),
+            InlineKeyboardButton("🎨 Next style",
+                                 callback_data=TWEAK + "style"),
+        ])
+    return InlineKeyboardMarkup(rows)
 
 
 def _user_id(update) -> int | None:
@@ -233,12 +264,28 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     caption = (msg.caption or "").strip()
     subject = ""
     if src["w"] > src["h"]:
-        # landscape: native resolution, no caption (no fullscreen room)
+        # landscape: native resolution, no caption (no fullscreen room),
+        # but Claude still proposes wording to copy into TikTok
         caption = ""
         await status.edit_text(
             "🖥️ Landscape clip — keeping the native resolution so it can "
             "go fullscreen in TikTok. Cuts, speed-ups and edge trims "
             "only; overlay your own caption when posting.")
+        if cfg.claude_judge and claude_available():
+            ideas_msg = await msg.reply_text(
+                "👀 Claude is drafting caption ideas for you to copy…")
+            try:
+                ideas, subject = await asyncio.to_thread(
+                    suggest_captions, dest, src["duration"])
+                lines = "\n".join(f"▫️ {c}" for c in ideas[:3])
+                await ideas_msg.edit_text(
+                    f"👀 Claude saw: {subject}\n\n"
+                    f"💡 Caption ideas — copy one into TikTok:\n{lines}")
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.warning("caption ideas failed: %s", exc)
+                await ideas_msg.edit_text(
+                    "😅 Claude couldn't come up with caption ideas — "
+                    "you're on your own for this one.")
     elif not caption and cfg.claude_judge and claude_available():
         await status.edit_text("👀 Claude is watching your clip to write "
                                "a caption…")
@@ -288,13 +335,17 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.awaiting_feedback = True
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
-            f"🎬 Take {session.revision + 1} — what should change? "
-            "Plain words work:\n"
-            "• “shorter and punchier”\n"
-            "• “different caption” / “caption at the top”\n"
-            "• “yellow caption” / “white on black caption”\n"
-            "• “no cold open”\n"
-            "• “add phonk music”")
+            f"🎬 Take {session.revision + 1} — tap a tweak, or just type "
+            "what should change in your own words:",
+            reply_markup=redo_keyboard(session))
+    elif query.data.startswith(TWEAK):
+        session.awaiting_feedback = False
+        raw = tweak_updates(query.data.removeprefix(TWEAK), session.params)
+        if not raw:
+            await query.message.reply_text(
+                "🤷 That tweak isn't available here.")
+            return
+        await _apply_and_render(query.message, context, session, raw)
 
 
 async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -330,6 +381,17 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.awaiting_feedback = True
             return
 
+    await _apply_and_render(msg, context, session, raw, reply_note)
+
+
+async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
+                            session: EditSession, raw: dict,
+                            reply_note: str = "") -> None:
+    """Validate raw updates, apply them, and render the next take.
+
+    Shared by free-text feedback (Claude-interpreted) and the quick-tap
+    tweak buttons — validate_updates stays the hard gate for both.
+    """
     updates = validate_updates(raw)
 
     if updates.pop("regenerate_caption", False) and "caption" not in updates:

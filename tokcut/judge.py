@@ -139,15 +139,15 @@ Reply with ONLY a JSON object, no other text:
 {avoid}"""
 
 
-def suggest_caption(
+def suggest_captions(
     video: str, duration: float, avoid: list[str] | None = None
-) -> tuple[str, str]:
-    """Have Claude watch sampled frames and write the caption.
+) -> tuple[list[str], str]:
+    """Have Claude watch sampled frames and propose captions.
 
     `avoid` lists captions already rejected — Claude must produce
-    something meaningfully different. Returns (caption, subject). Raises
-    JudgeUnavailable / ValueError on failure — callers fall back to a
-    deterministic caption.
+    something meaningfully different. Returns (eligible candidates in
+    preference order, subject). Raises JudgeUnavailable / ValueError on
+    failure — callers fall back to a deterministic caption.
     """
     avoid_note = ""
     if avoid:
@@ -167,12 +167,25 @@ def suggest_caption(
     candidates = [str(reply.get("caption", ""))]
     candidates += [str(a) for a in reply.get("alternatives", [])]
     rejected = {a.strip().lower() for a in (avoid or [])}
-    candidates = [c for c in candidates
-                  if c.strip().lower() not in rejected]
-    caption = pick_valid_caption(candidates)
-    if caption is None:
+    valid = []
+    for cand in candidates:
+        cand = cand.strip().strip('"')
+        if (cand and cand.lower() not in rejected
+                and len(cand) <= MAX_CAPTION_CHARS
+                and not check_caption(cand)
+                and cand not in valid):
+            valid.append(cand)
+    if not valid:
         raise ValueError(f"no eligible caption among {candidates!r}")
-    return caption, str(reply.get("subject", ""))
+    return valid, str(reply.get("subject", ""))
+
+
+def suggest_caption(
+    video: str, duration: float, avoid: list[str] | None = None
+) -> tuple[str, str]:
+    """Best single caption — see suggest_captions."""
+    captions, subject = suggest_captions(video, duration, avoid)
+    return captions[0], subject
 
 
 REVIEW_PROMPT = CREATOR_CONTEXT + """

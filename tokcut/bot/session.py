@@ -141,6 +141,34 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     return changes
 
 
+def tweak_updates(key: str, params: EditParams) -> dict:
+    """Map a quick-tap tweak button onto raw setting updates.
+
+    Pure and deterministic — no Claude round-trip, so button tweaks
+    apply instantly. Unknown keys return {} (caller reports no-op).
+    """
+    base = params.target if params.target is not None else AUTO_SWEET
+    if key == "shorter":
+        return {"target": base * 0.8}
+    if key == "longer":
+        return {"target": base * 1.25}
+    if key == "hook":
+        return {"hook": not params.hook}
+    if key == "crop":
+        return {"crop": not params.crop}
+    if key in ("phonk", "synthwave"):
+        return {"music": key}
+    if key == "nomusic":
+        return {"music": "off"}
+    if key == "style":
+        order = list(STYLES)
+        idx = order.index(params.style) if params.style in order else 0
+        return {"style": order[(idx + 1) % len(order)]}
+    if key == "newcaption":
+        return {"regenerate_caption": True}
+    return {}
+
+
 def fallback_updates(feedback: str,
                      current_target: float | None) -> dict:
     """Tiny deterministic interpretation when Claude is unavailable."""

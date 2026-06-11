@@ -13,9 +13,10 @@ go through (the cloud API caps at 50 MB).
 1. You send a video **as a file**. If you add a message caption, that
    exact text is used on-video. If not, **Claude watches sampled frames
    and writes the caption itself** (subject + caption are messaged to you).
-   **Landscape clips** (laptop/OBS recordings) skip captioning entirely:
-   they keep their native resolution so they can go fullscreen in TikTok
-   — cuts/speed-ups/edge-trims only, you overlay your own caption.
+   **Landscape clips** (laptop/OBS recordings) bake in no caption: they
+   keep their native resolution so they can go fullscreen in TikTok —
+   cuts/speed-ups/edge-trims only. Claude still messages you **caption
+   ideas to copy** into TikTok's own text tool.
 2. The caption passes the eligibility check; warnings are forwarded.
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
@@ -23,11 +24,13 @@ go through (the cloud API caps at 50 MB).
    ending) and its verdict is attached to the reply.
 5. The finished `.mp4` comes back as a **document** (no recompression)
    with [✅ Approve] [🔁 Redo] buttons.
-6. **Redo**: describe the change in plain words — "shorter and punchier",
-   "different caption", "caption at the top", "yellow caption" (style
-   presets: purple / yellow / black), "no cold open", "add phonk music".
-   Claude maps it to settings (validated and clamped in Python), and
-   revision r2 arrives with the same buttons. Sessions remember
+6. **Redo**: a quick-tap keyboard covers the common tweaks — ⚡ shorter,
+   🐢 longer, 🪝 cold open on/off, 🔍 zoom on/off, 🥁 phonk / 🎹
+   synthwave / 🔇 no music, plus ✍️ new caption and 🎨 next style on
+   vertical clips. Buttons apply instantly (no Claude round-trip).
+   Anything else, just type it — "caption at the top", "white on black
+   caption" — and Claude maps it to settings (validated and clamped in
+   Python). The next take arrives with the same buttons. Sessions remember
    history and rejected captions, so regenerated captions don't repeat.
 7. **Approve cleans up**: tapping ✅ deletes the downloaded original and
    every rendered revision from the workdir (they already live in
