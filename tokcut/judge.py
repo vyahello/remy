@@ -93,8 +93,15 @@ def run_claude(prompt: str,
     except subprocess.TimeoutExpired as exc:
         raise JudgeUnavailable(f"claude timed out after {timeout}s") from exc
     if res.returncode != 0:
+        # the real reason usually rides in the stdout JSON's "result"
+        # (e.g. "Not logged in"), not on stderr
+        detail = res.stderr.strip()[-300:]
+        try:
+            detail = str(json.loads(res.stdout).get("result", detail))
+        except (json.JSONDecodeError, AttributeError):
+            pass
         raise JudgeUnavailable(
-            f"claude exited {res.returncode}: {res.stderr.strip()[-300:]}")
+            f"claude exited {res.returncode}: {detail[:300]}")
     try:
         envelope = json.loads(res.stdout)
     except json.JSONDecodeError as exc:
