@@ -175,7 +175,10 @@ def edit(
            f"@ {src['fps']:.0f}fps  "
            f"({src.get('transfer') or 'unknown'} transfer)")
 
-    crop = content_crop(frames, src) if crop_enabled else None
+    # landscape = screen-recording content: never let the zoom slice
+    # through static text/UI (camera footage keeps the plain motion box)
+    crop = (content_crop(frames, src, protect_text=landscape)
+            if crop_enabled else None)
     if crop:
         notify(f"crop: zoom into {crop[2]}x{crop[3]} "
                f"at ({crop[0]},{crop[1]})")

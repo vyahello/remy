@@ -203,12 +203,29 @@ def _mass_bounds(marginal: np.ndarray, keep: float) -> tuple[int, int]:
     return lo, hi
 
 
+def _expand_to_seam(marginal: np.ndarray, idx: int, step: int,
+                    thr_frac: float = 0.12) -> int:
+    """Push a crop edge outward until it sits on a visually quiet seam.
+
+    `marginal` is per-column (or per-row) static detail; an edge resting
+    on a detailed column would slice through text/UI, so it moves in
+    `step` direction (-1 left/up, +1 right/down) until the detail drops
+    below thr_frac of the peak — or the frame edge.
+    """
+    thr = thr_frac * float(marginal.max() or 1.0)
+    i = idx
+    while 0 <= i + step < len(marginal) and marginal[i] > thr:
+        i += step
+    return i
+
+
 def content_crop(
     frames: np.ndarray,
     src: SourceInfo,
     min_keep: float = 0.55,
     keep_mass: float = 0.96,
     pad_px: int = 16,
+    protect_text: bool = False,
 ) -> tuple[int, int, int, int] | None:
     """Zoom into where the action happens.
 
@@ -218,6 +235,13 @@ def content_crop(
     ~keep_mass of the video's total motion energy per axis and returns an
     (x, y, w, h) crop in source pixels — or None when cropping wouldn't
     gain at least ~10% (an honest no-crop beats a silly one).
+
+    `protect_text` (screen-recording content): motion only marks
+    *changing* pixels, but a terminal full of still text is content too —
+    each crop edge is pushed outward to the nearest low-detail seam so
+    static text/UI is never cut mid-character. Camera footage skips this
+    (sensor noise/texture makes everything "detail", which would veto
+    every crop).
     """
     f = frames.astype(np.float32)
     motion = np.abs(np.diff(f, axis=0)).mean(axis=0)
@@ -225,6 +249,21 @@ def content_crop(
         return None
     r0, r1 = _mass_bounds(motion.sum(axis=1), keep_mass)
     c0, c1 = _mass_bounds(motion.sum(axis=0), keep_mass)
+
+    if protect_text:
+        # static detail map: gradients of the time-averaged frame (still
+        # text/UI stays sharp in the mean; moving content blurs out)
+        mean_f = f.mean(axis=0)
+        detail = (np.abs(np.diff(mean_f, axis=1,
+                                 prepend=mean_f[:, :1]))
+                  + np.abs(np.diff(mean_f, axis=0,
+                                   prepend=mean_f[:1, :])))
+        col_det = detail.sum(axis=0)
+        row_det = detail.sum(axis=1)
+        c0 = _expand_to_seam(col_det, c0, -1)
+        c1 = _expand_to_seam(col_det, c1, +1)
+        r0 = _expand_to_seam(row_det, r0, -1)
+        r1 = _expand_to_seam(row_det, r1, +1)
 
     ah, aw = motion.shape
     sx, sy = src["w"] / aw, src["h"] / ah

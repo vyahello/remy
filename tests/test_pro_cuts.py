@@ -261,3 +261,17 @@ def test_to_segments_drops_runs_past_duration():
     segs = A.to_segments(tiers, sample_fps=6, duration=4.5)
     assert all(e > s for s, e, _t in segs)
     assert segs[-1][1] == pytest.approx(4.5)
+
+
+def test_content_crop_never_slices_static_text():
+    # static "text" detail across the full width (checkerboard columns),
+    # motion only in the center: the crop must not cut into the text
+    rng = np.random.default_rng(7)
+    base = (np.indices((68, 120)).sum(axis=0) % 2) * 40.0 + 20.0
+    frames = np.repeat(base[None, :, :], 50, axis=0)
+    frames[:, 25:45, 50:70] += rng.normal(0, 30, (50, 20, 20))  # action
+    src = {"w": 1920, "h": 1080, "fps": 60, "duration": 60.0, "audio": False}
+    crop = A.content_crop(frames.astype(np.float32), src,
+                          protect_text=True)
+    # text spans the whole frame -> no seam -> no crop at all
+    assert crop is None
