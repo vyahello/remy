@@ -262,6 +262,12 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await status.edit_text(f"⚠️ That doesn't look like a video: {exc}")
         return
 
+    if src["duration"] < 2.0:
+        await status.edit_text(
+            "🖼️ That looks like a photo or a blink of a clip — send a "
+            "video at least a few seconds long.")
+        return
+
     caption = (msg.caption or "").strip()
     subject = ""
     if src["w"] > src["h"]:

@@ -28,7 +28,7 @@ echo "==> system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl rsync ffmpeg fonts-dejavu \
-    fonts-noto-color-emoji python3 python3-venv python3-pip
+    fonts-noto-color-emoji python3 python3-venv python3-pip acl
 
 # docker: only install the distro packages when docker is absent —
 # boxes with Docker CE (docker.com) conflict with Ubuntu's docker.io
@@ -43,6 +43,11 @@ echo "==> service user + dirs"
 id "$SVC_USER" &>/dev/null || useradd -m -s /bin/bash "$SVC_USER"
 mkdir -p /etc/tokcut /var/lib/telegram-bot-api
 chmod 755 /var/lib/telegram-bot-api
+# the Bot API container writes downloads as its own (container) user
+# with group-only perms — grant the bot user read/traverse, and make it
+# the default so future files inherit it (else downloads 404)
+setfacl -R -m "u:$SVC_USER:rX" /var/lib/telegram-bot-api
+setfacl -R -d -m "u:$SVC_USER:rX" /var/lib/telegram-bot-api
 
 echo "==> repo at $APP_DIR"
 if [ -d "$APP_DIR/.git" ]; then
