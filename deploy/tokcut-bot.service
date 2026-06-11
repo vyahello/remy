@@ -22,9 +22,17 @@ ExecStart=/opt/tokcut/venv/bin/tokcut-bot
 Restart=on-failure
 RestartSec=5
 
-# x265 encodes are the memory hogs, not the bot process itself —
-# keep the bot alive if the kernel goes hunting
-OOMScoreAdjust=-500
+# Good neighbor on a shared box: x265 encodes (ffmpeg children of this
+# service) yield CPU to other services and are memory-capped inside this
+# cgroup — when a render hits the cap, the kernel kills the ffmpeg (the
+# bot catches it and reports a failed take) instead of dragging down
+# whatever else runs on the host. Deliberately NO OOMScoreAdjust: the
+# children would inherit it and shift kill pressure onto other services.
+Nice=10
+CPUWeight=50
+IOWeight=50
+MemoryHigh=60%
+MemoryMax=75%
 # hardening
 NoNewPrivileges=true
 PrivateTmp=true
