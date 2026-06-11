@@ -65,9 +65,13 @@ jobs:
             git reset --hard origin/main
             venv/bin/pip install -q -e ".[bot]"
             # drain: a restart mid-encode kills the take — wait for the
-            # bot's .rendering marker to clear (up to ~20 min)
+            # bot's .rendering marker to clear (up to ~20 min).
+            # NB: plain `[ … ] && break` exits 1 under script_stop/set -e
+            # when the marker exists; `if` is strict-mode safe.
             for i in $(seq 1 60); do
-              [ ! -f ~/.tokcut/work/.rendering ] && break
+              if [ ! -f ~/.tokcut/work/.rendering ]; then
+                break
+              fi
               echo "render in progress, waiting ($i/60)…"
               sleep 20
             done
