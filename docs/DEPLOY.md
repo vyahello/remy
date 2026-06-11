@@ -20,12 +20,16 @@ a fresh box: ~10 minutes.
 ssh root@your-vps
 git clone https://github.com/vyahello/tokcut.git /opt/tokcut
 sudo bash /opt/tokcut/deploy/bootstrap.sh
+# …or run the bot under an existing account instead of a dedicated one:
+sudo TOKCUT_USER=youruser bash /opt/tokcut/deploy/bootstrap.sh
 ```
 
 The script is idempotent and sets up: packages (ffmpeg, fonts, Python,
-Docker), the `tokcut` service user, the venv, the Claude Code CLI, the
-local Bot API server (systemd-wrapped docker compose), the
-`tokcut-bot` systemd service, and a sudoers rule that lets CI restart
+Docker — distro docker is skipped when Docker CE is already present),
+the service user (created if missing; `TOKCUT_USER` to use your own),
+the venv, the Claude Code CLI, the local Bot API server
+(systemd-wrapped docker compose), the `tokcut-bot` systemd service
+(rendered for the chosen user), and a sudoers rule that lets CI restart
 the service — nothing else.
 
 ## 3. Fill in the secrets
@@ -56,9 +60,9 @@ journalctl -u tokcut-bot -f      # expect: api=local Bot API (…, ≤2 GB)
 
 In the GitHub repo settings:
 
-- **Secrets** (Actions → Secrets): `VPS_HOST`, `VPS_USER` (`tokcut`),
-  `VPS_SSH_KEY` (a dedicated private key; put its `.pub` in
-  `/home/tokcut/.ssh/authorized_keys` on the VPS).
+- **Secrets** (Actions → Secrets): `VPS_HOST`, `VPS_USER` (the service
+  user), `VPS_SSH_KEY` (a dedicated private key; put its `.pub` in the
+  service user's `~/.ssh/authorized_keys` on the VPS).
 - **Variable** (Actions → Variables): `TOKCUT_DEPLOY` = `enabled`.
 
 From then on every push to `main` that passes ruff + mypy + pytest is

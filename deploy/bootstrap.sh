@@ -17,7 +17,10 @@ set -euo pipefail
 
 REPO="${TOKCUT_REPO:-https://github.com/vyahello/tokcut.git}"
 APP_DIR=/opt/tokcut
-SVC_USER=tokcut
+# the user the bot runs as — defaults to a dedicated service account;
+# set TOKCUT_USER=youruser to run under an existing account instead:
+#   sudo TOKCUT_USER=cax bash deploy/bootstrap.sh
+SVC_USER="${TOKCUT_USER:-tokcut}"
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root (sudo)"; exit 1; }
 
@@ -66,7 +69,9 @@ ln -sf "/home/$SVC_USER/.local/bin/claude" /usr/local/bin/claude 2>/dev/null || 
 
 echo "==> env file"
 if [ ! -f /etc/tokcut/env ]; then
-    install -m 600 -o root -g root "$APP_DIR/deploy/env.example" /etc/tokcut/env
+    sed "s|/home/tokcut|/home/$SVC_USER|g" \
+        "$APP_DIR/deploy/env.example" > /etc/tokcut/env
+    chmod 600 /etc/tokcut/env && chown root:root /etc/tokcut/env
     echo "    !!! fill in /etc/tokcut/env before starting the bot"
 fi
 
@@ -89,9 +94,12 @@ ExecStop=/usr/bin/docker compose -f docker-compose.botapi.yml down
 WantedBy=multi-user.target
 UNIT
 
-echo "==> bot service"
-install -m 644 "$APP_DIR/deploy/tokcut-bot.service" \
-    /etc/systemd/system/tokcut-bot.service
+echo "==> bot service (rendered for user $SVC_USER)"
+sed "s/^User=tokcut/User=$SVC_USER/; s/^Group=tokcut/Group=$SVC_USER/; \
+     s|/home/tokcut|/home/$SVC_USER|g" \
+    "$APP_DIR/deploy/tokcut-bot.service" \
+    > /etc/systemd/system/tokcut-bot.service
+chmod 644 /etc/systemd/system/tokcut-bot.service
 
 echo "==> sudoers rule for CI deploys (restart only)"
 cat > /etc/sudoers.d/tokcut-deploy <<SUDO
