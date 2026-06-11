@@ -65,10 +65,12 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(_user_id(update), cfg.allowed_user_id):
         return
     await update.message.reply_text(
-        "👋 Send me a clip — as a *file* for best quality — and I'll cut it "
-        "into a vertical TikTok edit and send it back for your approval.\n\n"
-        "Add a message caption to use it as the on-video caption text; "
-        "otherwise Claude writes one.",
+        "🎬 Hey! I'm *tokcut* — your pocket TikTok editor.\n\n"
+        "Send me a clip *as a file* 📎 (plain video messages get squashed "
+        "by Telegram) and I'll cut the boring bits, speed-ramp the rest, "
+        "and drop a caption where it won't cover the action.\n\n"
+        "✍️ Add a message caption to choose the on-video text — or let "
+        "Claude watch the clip and write one.",
         parse_mode="Markdown",
     )
 
@@ -84,7 +86,8 @@ async def _claude_caption(msg, dest: str,
         return caption, subject
     except Exception as exc:  # noqa: BLE001 — judgment is best-effort
         log.warning("caption judgment failed: %s", exc)
-        await msg.reply_text("🤖 Claude couldn't caption this one.")
+        await msg.reply_text("😅 Claude couldn't make sense of this one — "
+                             "falling back to the filename.")
         return "", ""
 
 
@@ -94,20 +97,21 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
     cfg: BotConfig = context.application.bot_data["config"]
     lock: asyncio.Lock = context.application.bot_data["render_lock"]
     if lock.locked():
-        await msg.reply_text("⏳ Another render is running — you're queued.")
+        await msg.reply_text("🚦 One render at a time — you're next in "
+                             "line.")
 
     async with lock:  # renders are sequential: parallel x265 OOMs the box
         session.revision += 1
         rev = session.revision
         status = await msg.reply_text(
-            f"✂️ Rendering r{rev}: “{session.caption}”")
+            f"🎞️ Take {rev}, rolling: “{session.caption}”")
         loop = asyncio.get_running_loop()
         progress: list[str] = []
 
         def notify(line: str) -> None:
             # called from the worker thread — marshal back to the loop
             progress.append(line)
-            text = f"✂️ r{rev}\n" + "\n".join(progress[-6:])
+            text = f"🎞️ Take {rev}\n" + "\n".join(progress[-6:])
             asyncio.run_coroutine_threadsafe(
                 status.edit_text(text[:4000]), loop)
 
@@ -129,33 +133,34 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
         except Exception as exc:  # noqa: BLE001 — report, keep bot alive
             log.exception("edit failed")
             session.revision -= 1
-            await msg.reply_text(f"⚠️ Edit failed: {exc}")
+            await msg.reply_text(f"💥 The edit fell over: {exc}")
             return
         session.outputs.append(out)  # tracked for cleanup on approve
 
         review_line = ""
         if cfg.claude_judge and claude_available():
-            await status.edit_text("🤖 Claude is reviewing the result…")
+            await status.edit_text(
+                f"🧐 Take {rev} is cut — sending it to the director…")
             try:
                 duration = (await asyncio.to_thread(probe, out))["duration"]
                 review = await asyncio.to_thread(
                     review_output, out, duration, session.caption)
                 if review["verdict"] == "approve":
-                    review_line = f"🤖 review: ✅ {review['notes']}"
+                    review_line = f"🧐 Director: ✅ {review['notes']}"
                 else:
                     issues = "\n".join(f"• {i}" for i in review["issues"])
-                    review_line = (f"🤖 review: 🔁 would redo:\n{issues}\n"
+                    review_line = (f"🧐 Director: 🔁 would tweak:\n{issues}\n"
                                    f"({review['notes']})")
             except Exception as exc:  # noqa: BLE001 — best-effort
                 log.warning("output review failed: %s", exc)
 
         session.history.append(f"r{rev}: {session.summary()}")
         size_mb = os.path.getsize(out) / 1048576
-        await msg.reply_text(f"⬆️ Uploading r{rev} ({size_mb:.1f} MB)…")
-        doc_caption = (f"r{rev} ✅ “{session.caption}”\n"
-                       "Muted — add a trending TikTok sound in-app."
-                       if not p.music_style and not p.keep_audio else
-                       f"r{rev} ✅ “{session.caption}”")
+        await status.edit_text(
+            f"📤 Sending take {rev} your way ({size_mb:.1f} MB)…")
+        doc_caption = f"🎬 Take {rev} · “{session.caption}”"
+        if not p.music_style and not p.keep_audio:
+            doc_caption += "\n🔇 Muted — add a trending sound in TikTok."
         if review_line:
             doc_caption += f"\n\n{review_line}"
         with open(out, "rb") as fh:
@@ -187,7 +192,7 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if old is not None:
         cleanup_files(old)
 
-    await msg.reply_text("⬇️ Downloading…")
+    status = await msg.reply_text("📥 Grabbing your clip…")
     os.makedirs(cfg.workdir, exist_ok=True)
     file_name = getattr(file_obj, "file_name", "") or ""
     suffix = os.path.splitext(file_name)[1]
@@ -204,18 +209,19 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "docs/BOT.md)." if not cfg.local_mode else
             f"The local Bot API server caps files at {cfg.max_file_mb} MB."
         )
-        await msg.reply_text(f"⚠️ Couldn't download that file: {exc}\n{hint}")
+        await status.edit_text(
+            f"⚠️ Couldn't download that file: {exc}\n{hint}")
         return
 
     caption = (msg.caption or "").strip()
     subject = ""
     if not caption and cfg.claude_judge and claude_available():
-        await msg.reply_text("🤖 Asking Claude to watch the clip and "
-                             "write a caption…")
+        await status.edit_text("👀 Claude is watching your clip to write "
+                               "a caption…")
         caption, subject = await _claude_caption(msg, dest)
         if caption:
-            await msg.reply_text(
-                f"🤖 Claude sees: {subject}\n📝 Caption: “{caption}”")
+            await status.edit_text(
+                f"👀 Claude saw: {subject}\n✍️ Caption: “{caption}”")
     if not caption:
         caption = derive_caption(msg.caption, file_name)
     for warning in check_caption(caption):
@@ -237,8 +243,8 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     session = _session(context, query.message.chat_id)
     if session is None:
-        await query.message.reply_text("No active edit session — send a "
-                                       "clip to start one.")
+        await query.message.reply_text("🤷 No clip in progress — send me "
+                                       "one to get rolling.")
         return
 
     if query.data == APPROVE:
@@ -248,18 +254,22 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             query.message.chat_id, None)
         removed, freed = cleanup_files(session)
         await query.edit_message_reply_markup(reply_markup=None)
-        note = (f"\n🧹 Cleaned up {removed} working files "
+        note = (f"\n🧹 Swept up {removed} working files "
                 f"({freed / 1048576:.0f} MB freed)." if removed else "")
         await query.message.reply_text(
-            "🎉 Approved — post it! (Muted exports: add a trending sound "
-            "in the TikTok app.)" + note)
+            "🎉 That's a wrap — post it! 🚀\n"
+            "🔇 Muted export: add a trending sound in the TikTok app."
+            + note)
     elif query.data == REDO:
         session.awaiting_feedback = True
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
-            "🔁 What should change? Tell me in your own words — e.g. "
-            "“shorter and punchier”, “different caption”, “caption at the "
-            "top”, “no cold open”, “add phonk music”.")
+            f"🎬 Take {session.revision + 1} — what should change? "
+            "Plain words work:\n"
+            "• “shorter and punchier”\n"
+            "• “different caption” / “caption at the top”\n"
+            "• “no cold open”\n"
+            "• “add phonk music”")
 
 
 async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -278,7 +288,7 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     raw: dict = {}
     reply_note = ""
     if cfg.claude_judge and claude_available():
-        await msg.reply_text("🤖 Working out what to change…")
+        await msg.reply_text("🧠 Translating that into editor moves…")
         try:
             raw = await asyncio.to_thread(
                 interpret_feedback, feedback, session.summary(),
@@ -290,16 +300,15 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         raw = fallback_updates(feedback, session.params.target)
         if not raw:
             await msg.reply_text(
-                "⚠️ I couldn't map that feedback to a setting (and Claude "
-                "is unavailable). Try “shorter”, “longer”, or tap Redo "
-                "again with different wording.")
+                "😅 I couldn't turn that into a setting (and Claude is "
+                "offline). Try “shorter” or “longer”, or rephrase it.")
             session.awaiting_feedback = True
             return
 
     updates = validate_updates(raw)
 
     if updates.pop("regenerate_caption", False) and "caption" not in updates:
-        await msg.reply_text("🤖 Writing a new caption…")
+        await msg.reply_text("✍️ Writing a fresh caption…")
         avoid = [*session.past_captions, session.caption]
         new_caption, _ = await _claude_caption(msg, session.source, avoid)
         if new_caption:
@@ -315,12 +324,12 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     changes = apply_updates(session, updates)
     if not changes:
         await msg.reply_text(
-            "🤷 Nothing changed — that feedback didn't map to any setting. "
-            "Tap Redo and try different wording.")
+            "🤷 That didn't change anything — tap Redo and try different "
+            "wording.")
         return
 
     note = f"{reply_note}\n" if reply_note else ""
-    await msg.reply_text(note + "🔧 Changing: " + ", ".join(changes))
+    await msg.reply_text(note + "🔧 Dialing in: " + ", ".join(changes))
     await _render_and_deliver(msg, context, session)
 
 
