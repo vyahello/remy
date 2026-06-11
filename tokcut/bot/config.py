@@ -16,6 +16,9 @@ class BotConfig:
     workdir: str
     default_target: float | None  # None = auto (TikTok-friendly length)
     claude_judge: bool
+    # x265 preset — "medium" for quality boxes, "fast"/"faster" to halve
+    # encode times on small shared VPSes (marginal quality cost at crf 18)
+    preset: str = "medium"
     # Local Bot API server (step 5) — empty unless TOKCUT_BOT_API_URL is set.
     # When set, the bot talks to a self-hosted telegram-bot-api instance,
     # lifting the 50 MB up/download cap to 2 GB so full iPhone clips work.
@@ -65,6 +68,11 @@ def load_config(env: dict[str, str] | None = None) -> BotConfig:
     claude_judge = src.get(
         "TOKCUT_CLAUDE", "on").strip().lower() not in ("off", "0", "false")
 
+    preset = src.get("TOKCUT_PRESET", "").strip().lower() or "medium"
+    if preset not in ("ultrafast", "superfast", "veryfast", "faster",
+                      "fast", "medium", "slow", "slower", "veryslow"):
+        raise RuntimeError(f"TOKCUT_PRESET: unknown x265 preset {preset!r}")
+
     api_url = src.get("TOKCUT_BOT_API_URL", "").strip().rstrip("/")
     base_url = base_file_url = ""
     local_mode = False
@@ -78,7 +86,8 @@ def load_config(env: dict[str, str] | None = None) -> BotConfig:
         local_mode = True
 
     return BotConfig(token, allowed_user_id, workdir, default_target,
-                     claude_judge, base_url, base_file_url, local_mode)
+                     claude_judge, preset, base_url, base_file_url,
+                     local_mode)
 
 
 def is_allowed(user_id: int | None, allowed_user_id: int) -> bool:

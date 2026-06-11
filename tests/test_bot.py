@@ -138,3 +138,11 @@ def test_friendly_progress_hides_technical_lines():
     assert fp("source: 1920x1080  76.5s @ 60fps (bt709 transfer)") is None
     assert fp("caption at y=1277 (auto)") is None
     assert fp("   8.33 -   41.50  FAST  2.19x") is None
+
+
+def test_load_config_preset():
+    base = {"TELEGRAM_BOT_TOKEN": "t", "TOKCUT_ALLOWED_USER_ID": "1"}
+    assert load_config(base).preset == "medium"
+    assert load_config({**base, "TOKCUT_PRESET": "fast"}).preset == "fast"
+    with pytest.raises(RuntimeError, match="TOKCUT_PRESET"):
+        load_config({**base, "TOKCUT_PRESET": "warp9"})

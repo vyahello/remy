@@ -168,6 +168,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 keep_audio=p.keep_audio,
                 music="__auto__" if p.music_style else None,
                 music_style=p.music_style or "synthwave",
+                preset=cfg.preset,
                 on_progress=notify)
         except Exception as exc:  # noqa: BLE001 — report, keep bot alive
             log.exception("edit failed")
