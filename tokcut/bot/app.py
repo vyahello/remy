@@ -211,6 +211,9 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 filename=os.path.basename(out),
                 caption=doc_caption[:1024],
                 reply_markup=VERDICT_KEYBOARD,
+                # muted MP4s get auto-classified as "GIF" animations —
+                # force Telegram to treat it as a plain file
+                disable_content_type_detection=True,
                 read_timeout=600,
                 write_timeout=600,
             )
@@ -267,6 +270,15 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "🖼️ That looks like a photo or a blink of a clip — send a "
             "video at least a few seconds long.")
         return
+
+    if msg.video is not None:
+        # sent as a video, not a file: Telegram already recompressed it
+        await msg.reply_text(
+            f"🗜️ Heads up — you sent this as a *video*, so Telegram "
+            f"crushed it to {src['w']}x{src['h']} before I got it. "
+            "I'll edit it anyway, but for full quality send clips as a "
+            "*file*: 📎 → File.",
+            parse_mode="Markdown")
 
     caption = (msg.caption or "").strip()
     subject = ""

@@ -352,3 +352,19 @@ def test_window_crop_peels_busy_top_bar():
     assert crop is not None
     x, y, w, h = crop
     assert y >= 16  # the 2-row bar (~32px) is peeled, minus padding
+
+
+def test_window_crop_never_slices_a_second_window():
+    # split-screen demo: bright "browser" fills the left half (static),
+    # dark terminal with the motion on the right — the browser is
+    # content, not chrome, and must survive
+    rng = np.random.default_rng(9)
+    base = np.full((68, 120), 200.0)        # browser (white page)
+    base[:, 60:] = 40.0                     # terminal half
+    frames = np.repeat(base[None, :, :], 40, axis=0)
+    frames[:, 20:50, 70:110] += rng.normal(0, 25, (40, 30, 40))
+    src = {"w": 1920, "h": 1080, "fps": 60, "duration": 60.0,
+           "audio": False}
+    crop = A.window_crop(frames.astype(np.float32), src)
+    # either no crop, or one that keeps the left (browser) half
+    assert crop is None or crop[0] < 1920 * 0.1

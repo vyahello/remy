@@ -389,6 +389,19 @@ def window_crop(
                                         or row_std[r1] > busy):
         r1 -= 1
 
+    # desktop chrome is narrow — wanting to cut deeper than ~20% from a
+    # side means we're about to slice another content window (browser +
+    # terminal split-screen demos): keep that side whole instead
+    max_cut_c, max_cut_r = int(aw * 0.2), int(ah * 0.2)
+    if c0 > max_cut_c:
+        c0 = 0
+    if aw - 1 - c1 > max_cut_c:
+        c1 = aw - 1
+    if r0 > max_cut_r:
+        r0 = 0
+    if ah - 1 - r1 > max_cut_r:
+        r1 = ah - 1
+
     # shaving even narrow desktop strips is worth it — relax the
     # minimum-gain rule relative to the motion crop
     return _finalize_crop(c0, c1, r0, r1, mean_f.shape, src,
