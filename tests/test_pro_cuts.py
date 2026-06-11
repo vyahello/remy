@@ -335,3 +335,20 @@ def test_auto_target_screen_floor_divided_by_action_cap():
     assert plain == 50.0 * 1.05
     assert screen == max(A.AUTO_SWEET, 50.0 * 1.05 / A.SCREEN_ACTION_MAX)
     assert screen < plain
+
+
+def test_window_crop_peels_busy_top_bar():
+    # like _screen_frames but with a busy "taskbar" strip at the very
+    # top whose mean luminance is close to the window background
+    rng = np.random.default_rng(5)
+    base = rng.uniform(120, 200, (68, 120))
+    base[:, 12:108] = 40.0
+    base[0:2, :] = rng.uniform(25, 55, (2, 120))  # busy bar, bg-ish mean
+    frames = np.repeat(base[None, :, :], 40, axis=0)
+    frames[:, 30:50, 40:80] += rng.normal(0, 25, (40, 20, 40))
+    src = {"w": 1920, "h": 1080, "fps": 60, "duration": 60.0,
+           "audio": False}
+    crop = A.window_crop(frames.astype(np.float32), src)
+    assert crop is not None
+    x, y, w, h = crop
+    assert y >= 16  # the 2-row bar (~32px) is peeled, minus padding

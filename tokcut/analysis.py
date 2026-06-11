@@ -369,10 +369,26 @@ def window_crop(
     cy = int((row_m * np.arange(len(row_m))).sum() / row_m.sum())
     cx = int((col_m * np.arange(len(col_m))).sum() / col_m.sum())
     ah, aw = mean_f.shape
-    r0, r1 = _run_with_gaps(is_bg.mean(axis=1) > frac, cy,
+    row_frac = is_bg.mean(axis=1)
+    r0, r1 = _run_with_gaps(row_frac > frac, cy,
                             max_gap=max(1, ah // 24))
     c0, c1 = _run_with_gaps(is_bg.mean(axis=0) > frac, cx,
                             max_gap=max(1, aw // 24))
+
+    # peel taskbars/title strips off the top and bottom: bars hug the
+    # window edges and are busy (icons, clock, menus — high per-row
+    # variance) or not clean background; never peel deeper than ~10%
+    row_std = mean_f.std(axis=1)
+    busy = 2.0 * float(np.median(row_std)) + 1.0
+    shave = max(1, ah // 10)
+    top_lim, bot_lim = r0 + shave, r1 - shave
+    while r0 < r1 and r0 < top_lim and (row_frac[r0] < 0.85
+                                        or row_std[r0] > busy):
+        r0 += 1
+    while r1 > r0 and r1 > bot_lim and (row_frac[r1] < 0.85
+                                        or row_std[r1] > busy):
+        r1 -= 1
+
     # shaving even narrow desktop strips is worth it — relax the
     # minimum-gain rule relative to the motion crop
     return _finalize_crop(c0, c1, r0, r1, mean_f.shape, src,
