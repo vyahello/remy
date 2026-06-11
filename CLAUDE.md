@@ -121,8 +121,10 @@ venv/bin/mypy            # fully typed; must stay clean
 
 The codebase is fully type-hinted and mypy-clean — keep it that way when
 editing. CI (`.github/workflows/ci.yml`) runs ruff + mypy + pytest on
-3.11–3.13. The deploy stage is stubbed (`if: ... && false`) until the
-VPS/Telegram bot exists.
+3.11–3.13. The deploy stage pushes `main` to the VPS over SSH; it is
+armed by the repo variable `TOKCUT_DEPLOY=enabled` + `VPS_*` secrets and
+skipped otherwise. Server setup: `deploy/bootstrap.sh`, runbook
+`docs/DEPLOY.md`.
 
 ## Reproduce the sample result
 

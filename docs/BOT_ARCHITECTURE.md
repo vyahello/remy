@@ -162,3 +162,9 @@ Notes / caveats to keep in mind:
    a beat in output time, and the video ends on one. Applies in
    `cli.edit()` whenever `--music` synthesizes the track (CLI and bot);
    user-supplied music files skip it (unknown bpm).
+7. ✅ **VPS deploy kit** — `deploy/bootstrap.sh` (idempotent server
+   setup: packages, service user, venv, Claude CLI, Bot API container,
+   systemd units, CI sudoers rule), `deploy/tokcut-bot.service`,
+   `deploy/env.example`, and the CI deploy job armed by the
+   `TOKCUT_DEPLOY=enabled` repo variable + `VPS_*` secrets. Runbook:
+   `docs/DEPLOY.md`.

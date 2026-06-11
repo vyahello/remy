@@ -39,22 +39,30 @@ jobs:
       - name: Test
         run: pytest
 
-  # Deploy stage is a placeholder for the future VPS rollout.
-  # Enable once the Telegram bot service exists and secrets are set.
+  # VPS deploy — armed by the repo variable TOKCUT_DEPLOY=enabled
+  # (Settings → Secrets and variables → Actions → Variables) plus the
+  # VPS_HOST / VPS_USER / VPS_SSH_KEY secrets. Until those exist this
+  # job is skipped. Server prep: deploy/bootstrap.sh (see docs/DEPLOY.md).
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && false  # disabled until VPS ready
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      vars.TOKCUT_DEPLOY == 'enabled'
+    concurrency: deploy            # never two deploys at once
     steps:
-      - uses: actions/checkout@v4
       - name: Deploy to VPS over SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
           script: |
-            cd ~/tokcut
-            git pull --ff-only
-            pip install -e .
-            sudo systemctl restart tokcut-bot
+            cd /opt/tokcut
+            git fetch origin main
+            git reset --hard origin/main
+            venv/bin/pip install -q -e ".[bot]"
+            sudo /usr/bin/systemctl restart tokcut-bot
+            systemctl --no-pager --lines=0 status tokcut-bot

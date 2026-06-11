@@ -1,0 +1,35 @@
+# systemd unit for the tokcut Telegram bot.
+# Installed by deploy/bootstrap.sh to /etc/systemd/system/tokcut-bot.service
+#
+#   sudo systemctl enable --now tokcut-bot
+#   journalctl -u tokcut-bot -f
+
+[Unit]
+Description=tokcut Telegram bot (auto TikTok editor)
+Documentation=https://github.com/vyahello/tokcut
+# the local Bot API container should be up first (docker compose)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tokcut
+Group=tokcut
+WorkingDirectory=/opt/tokcut
+# secrets live outside the repo — see deploy/env.example
+EnvironmentFile=/etc/tokcut/env
+ExecStart=/opt/tokcut/venv/bin/tokcut-bot
+Restart=on-failure
+RestartSec=5
+
+# x265 encodes are the memory hogs, not the bot process itself —
+# keep the bot alive if the kernel goes hunting
+OOMScoreAdjust=-500
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/tokcut /home/tokcut /var/lib/telegram-bot-api
+
+[Install]
+WantedBy=multi-user.target

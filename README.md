@@ -151,8 +151,9 @@ For full-length clips over Telegram's 50 MB cap, run a local Bot API server
 
 ## 🗺️ Roadmap
 
-VPS deploy (the CI stage is stubbed and waiting). Big clips already work —
-point the bot at a local Bot API server — and music cuts are beat-aligned.
+The pipeline is feature-complete; what's left is running it somewhere:
+[`docs/DEPLOY.md`](docs/DEPLOY.md) walks a fresh VPS to a 24/7 bot in
+~10 minutes (`deploy/bootstrap.sh` + systemd + auto-deploy from CI).
 See [`docs/IDEAS.md`](docs/IDEAS.md) for the content playbook.
 
 ---
