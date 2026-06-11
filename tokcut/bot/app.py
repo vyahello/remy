@@ -33,7 +33,7 @@ from ..judge import (
     suggest_captions,
 )
 from .config import BotConfig, is_allowed, load_config
-from .pipeline import derive_caption, friendly_progress
+from .pipeline import delivery_name, derive_caption, friendly_progress
 from .session import (
     EditSession,
     apply_updates,
@@ -300,7 +300,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
         with open(out, "rb") as fh:
             await msg.reply_document(
                 document=fh,
-                filename=os.path.basename(out),
+                filename=delivery_name(session.file_name, rev),
                 caption=doc_caption[:1024],
                 reply_markup=VERDICT_KEYBOARD,
                 # muted MP4s get auto-classified as "GIF" animations —

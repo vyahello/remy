@@ -86,3 +86,18 @@ def friendly_progress(line: str) -> str | None:
     if line.startswith("rendering"):
         return "🎬 encoding… (takes a couple of minutes)"
     return None  # probe data, segment rows, caption y — log-only
+
+
+def delivery_name(file_name: str | None, rev: int) -> str:
+    """Human filename for a delivered take.
+
+    On disk everything is keyed by Telegram's file_unique_id (collision
+    proof, ugly); the file the creator receives is named after their
+    original upload, or the date when the upload had no name.
+    """
+    import datetime
+    stem = os.path.splitext(file_name or "")[0]
+    stem = re.sub(r"[^\w\- ]", "", stem).strip().replace(" ", "_")
+    if not stem:
+        stem = f"tokcut_{datetime.date.today():%Y-%m-%d}"
+    return f"{stem}_take{rev}.mp4"

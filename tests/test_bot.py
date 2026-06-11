@@ -146,3 +146,16 @@ def test_load_config_preset():
     assert load_config({**base, "TOKCUT_PRESET": "fast"}).preset == "fast"
     with pytest.raises(RuntimeError, match="TOKCUT_PRESET"):
         load_config({**base, "TOKCUT_PRESET": "warp9"})
+
+
+def test_delivery_name_uses_original_stem():
+    from tokcut.bot.pipeline import delivery_name
+    assert delivery_name("gping demo.mp4", 2) == "gping_demo_take2.mp4"
+
+
+def test_delivery_name_falls_back_to_date():
+    import datetime
+
+    from tokcut.bot.pipeline import delivery_name
+    assert delivery_name("", 1) == (
+        f"tokcut_{datetime.date.today():%Y-%m-%d}_take1.mp4")
