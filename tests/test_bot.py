@@ -54,6 +54,34 @@ def test_load_config_bad_target():
                      "TOKCUT_TARGET": "soon"})
 
 
+def test_load_config_no_local_mode_by_default():
+    cfg = load_config({"TELEGRAM_BOT_TOKEN": "t",
+                       "TOKCUT_ALLOWED_USER_ID": "1"})
+    assert cfg.local_mode is False
+    assert cfg.bot_api_base_url == ""
+    assert cfg.bot_api_base_file_url == ""
+    assert cfg.max_file_mb == 50
+
+
+def test_load_config_local_bot_api():
+    cfg = load_config({
+        "TELEGRAM_BOT_TOKEN": "t",
+        "TOKCUT_ALLOWED_USER_ID": "1",
+        "TOKCUT_BOT_API_URL": "http://127.0.0.1:8081/",  # trailing slash
+    })
+    assert cfg.local_mode is True
+    assert cfg.bot_api_base_url == "http://127.0.0.1:8081/bot"
+    assert cfg.bot_api_base_file_url == "http://127.0.0.1:8081/file/bot"
+    assert cfg.max_file_mb == 2000
+
+
+def test_load_config_bad_bot_api_url():
+    with pytest.raises(RuntimeError, match="http"):
+        load_config({"TELEGRAM_BOT_TOKEN": "t",
+                     "TOKCUT_ALLOWED_USER_ID": "1",
+                     "TOKCUT_BOT_API_URL": "127.0.0.1:8081"})
+
+
 def test_is_allowed():
     assert is_allowed(42, 42)
     assert not is_allowed(7, 42)

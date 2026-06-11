@@ -1,11 +1,12 @@
 # Running the Telegram bot
 
-Status: **step 4** — the full loop. Send a clip, Claude watches it and
-writes the caption, the bot renders the 1080x1920 edit, Claude reviews
-the result, and the file arrives with **[✅ Approve] [🔁 Redo]** buttons.
-Tap Redo and say what to change in your own words — Claude maps it onto
-the editor's settings and a new revision is rendered. Only the local Bot
-API server for >50 MB files remains (step 5, see `BOT_ARCHITECTURE.md`).
+Status: **step 5** — the full loop on a local Bot API server. Send a clip,
+Claude watches it and writes the caption, the bot renders the 1080x1920
+edit, Claude reviews the result, and the file arrives with
+**[✅ Approve] [🔁 Redo]** buttons. Tap Redo and say what to change in your
+own words — Claude maps it onto the editor's settings and a new revision is
+rendered. With the optional local Bot API server, full ~250 MB iPhone clips
+go through (the cloud API caps at 50 MB).
 
 ## How a clip flows
 
@@ -57,9 +58,34 @@ Then in Telegram: send `/start`, then send a clip. **Send it as a *file*
 ruin the quality. The bot edits it and sends the finished vertical clip
 back as a document.
 
-> The standard Bot API caps downloads at **50 MB**. A 95 s iPhone HEVC clip
-> is ~250 MB, so for full clips you'll need a local Bot API server — that's
-> step 5 on the roadmap.
+> The standard cloud Bot API caps downloads at **50 MB**. A 95 s iPhone HEVC
+> clip is ~250 MB, so for full clips run a local Bot API server (next
+> section) — it lifts the cap to 2 GB.
+
+## Big clips: local Bot API server (step 5)
+
+The cloud Bot API rejects files over 50 MB. To handle full-length clips, run
+your own `telegram-bot-api` and point the bot at it. A compose file is
+included.
+
+1. Get a `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` from
+   [my.telegram.org](https://my.telegram.org) → **API development tools**.
+   (These identify the *app*; the bot still uses its @BotFather token.)
+2. Put them in `.env` (gitignored), then start the server:
+   ```bash
+   docker compose -f docker-compose.botapi.yml up -d
+   ```
+3. Point the bot at it and run on the **same host** (they share a download
+   directory at an identical path — see the compose file):
+   ```bash
+   echo 'TOKCUT_BOT_API_URL=http://127.0.0.1:8081' >> .env
+   set -a; . ./.env; set +a
+   venv/bin/tokcut-bot
+   ```
+
+On startup the bot logs which endpoint it's using (`api=local Bot API …` vs
+`api=cloud Bot API (≤50 MB)`). In local mode downloads resolve to local file
+paths instead of an HTTP copy, so even large clips land instantly.
 
 ## What runs where
 

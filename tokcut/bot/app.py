@@ -190,10 +190,13 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await tg_file.download_to_drive(dest)
     except Exception as exc:  # noqa: BLE001 — surface any download failure
         log.exception("download failed")
-        await msg.reply_text(
-            f"⚠️ Couldn't download that file: {exc}\n"
-            "Files over 50 MB need a local Bot API server (step 5)."
+        hint = (
+            f"Files over {cfg.max_file_mb} MB exceed the standard Bot API "
+            "cap — set TOKCUT_BOT_API_URL to a local Bot API server (see "
+            "docs/BOT.md)." if not cfg.local_mode else
+            f"The local Bot API server caps files at {cfg.max_file_mb} MB."
         )
+        await msg.reply_text(f"⚠️ Couldn't download that file: {exc}\n{hint}")
         return
 
     caption = (msg.caption or "").strip()
@@ -311,7 +314,7 @@ def build_application(cfg: BotConfig) -> Application:
     # Uploading a multi-MB rendered clip blows past the default 5s write
     # timeout, so give media transfers room; downloads need a long read
     # timeout too. connect/pool stay short to fail fast on real outages.
-    app = (
+    builder = (
         Application.builder()
         .token(cfg.telegram_token)
         .connect_timeout(20.0)
@@ -319,8 +322,17 @@ def build_application(cfg: BotConfig) -> Application:
         .write_timeout(120.0)
         .media_write_timeout(600.0)
         .pool_timeout(20.0)
-        .build()
     )
+    if cfg.local_mode:
+        # Self-hosted telegram-bot-api: 2 GB files, and downloads resolve to
+        # local paths instead of HTTP (server shares this filesystem).
+        builder = (
+            builder
+            .base_url(cfg.bot_api_base_url)
+            .base_file_url(cfg.bot_api_base_file_url)
+            .local_mode(True)
+        )
+    app = builder.build()
     app.bot_data["config"] = cfg
     app.bot_data["render_lock"] = asyncio.Lock()
     app.bot_data["sessions"] = {}
@@ -340,8 +352,10 @@ def main() -> None:
     )
     cfg = load_config()
     app = build_application(cfg)
-    log.info("tokcut bot starting (allow-listed user=%s, workdir=%s)",
-             cfg.allowed_user_id, cfg.workdir)
+    api = (f"local Bot API ({cfg.bot_api_base_url}, ≤2 GB)"
+           if cfg.local_mode else "cloud Bot API (≤50 MB)")
+    log.info("tokcut bot starting (user=%s, workdir=%s, api=%s)",
+             cfg.allowed_user_id, cfg.workdir, api)
     app.run_polling()
 
 

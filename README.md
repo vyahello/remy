@@ -141,10 +141,15 @@ cp .env.example .env             # fill in token + your Telegram id
 tokcut-bot
 ```
 
+For full-length clips over Telegram's 50 MB cap, run a local Bot API server
+(`docker compose -f docker-compose.botapi.yml up -d`) and set
+`TOKCUT_BOT_API_URL` — it lifts the limit to 2 GB. See [`docs/BOT.md`](docs/BOT.md).
+
 ## 🗺️ Roadmap
 
-Local Bot API server for >50 MB clips, 🥁 beat-aligned music cuts, and VPS
-deploy. See [`docs/IDEAS.md`](docs/IDEAS.md) for the content playbook.
+🥁 Beat-aligned music cuts and VPS deploy. (Big clips already work — point
+the bot at a local Bot API server, see [`docs/BOT.md`](docs/BOT.md).) See
+[`docs/IDEAS.md`](docs/IDEAS.md) for the content playbook.
 
 ---
 

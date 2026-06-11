@@ -17,6 +17,17 @@ class BotConfig:
     workdir: str
     default_target: float
     claude_judge: bool
+    # Local Bot API server (step 5) — empty unless TOKCUT_BOT_API_URL is set.
+    # When set, the bot talks to a self-hosted telegram-bot-api instance,
+    # lifting the 50 MB up/download cap to 2 GB so full iPhone clips work.
+    bot_api_base_url: str = ""
+    bot_api_base_file_url: str = ""
+    local_mode: bool = False
+
+    @property
+    def max_file_mb(self) -> int:
+        """Telegram's up/download cap for the active API endpoint."""
+        return 2000 if self.local_mode else 50
 
 
 def load_config(env: dict[str, str] | None = None) -> BotConfig:
@@ -52,8 +63,20 @@ def load_config(env: dict[str, str] | None = None) -> BotConfig:
     claude_judge = src.get(
         "TOKCUT_CLAUDE", "on").strip().lower() not in ("off", "0", "false")
 
+    api_url = src.get("TOKCUT_BOT_API_URL", "").strip().rstrip("/")
+    base_url = base_file_url = ""
+    local_mode = False
+    if api_url:
+        if not api_url.startswith(("http://", "https://")):
+            raise RuntimeError(
+                "TOKCUT_BOT_API_URL must be an http(s) URL, e.g. "
+                "http://127.0.0.1:8081")
+        base_url = f"{api_url}/bot"
+        base_file_url = f"{api_url}/file/bot"
+        local_mode = True
+
     return BotConfig(token, allowed_user_id, workdir, default_target,
-                     claude_judge)
+                     claude_judge, base_url, base_file_url, local_mode)
 
 
 def is_allowed(user_id: int | None, allowed_user_id: int) -> bool:

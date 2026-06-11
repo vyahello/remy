@@ -1,0 +1,34 @@
+# Local Telegram Bot API server (tokcut step 5).
+#
+# The standard cloud Bot API caps file up/downloads at 50 MB; a full iPhone
+# HEVC clip is ~250 MB. Running your own telegram-bot-api lifts that to 2 GB
+# and lets the bot resolve downloads as local file paths (no HTTP copy).
+#
+# 1. Get TELEGRAM_API_ID + TELEGRAM_API_HASH from https://my.telegram.org
+#    (Apps). These identify the *app*, not the bot — the bot still uses its
+#    @BotFather token at runtime.
+# 2. Put them in .env (gitignored).
+# 3. Start it:  docker compose -f docker-compose.botapi.yml up -d
+# 4. Point the bot at it:  TOKCUT_BOT_API_URL=http://127.0.0.1:8081
+#    and run the bot on the SAME host so it shares the volume below.
+#
+# The bot and this server must share a filesystem at the SAME absolute path:
+# in --local mode the server returns the download's absolute path and the bot
+# opens it directly (no HTTP copy). So the host dir is bind-mounted to the
+# identical path inside the container — a named volume would not match.
+# Override the location with TELEGRAM_BOT_API_DIR if /var/lib isn't writable.
+
+services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: tokcut-bot-api
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:?set TELEGRAM_API_ID in .env}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:?set TELEGRAM_API_HASH in .env}
+      TELEGRAM_LOCAL: 1          # serve files as local paths, lift 50 MB cap
+    ports:
+      - "127.0.0.1:8081:8081"    # bind to loopback only — it's not public
+    volumes:
+      # same path on both sides so the bot can read what the server writes
+      - ${TELEGRAM_BOT_API_DIR:-/var/lib/telegram-bot-api}:${TELEGRAM_BOT_API_DIR:-/var/lib/telegram-bot-api}

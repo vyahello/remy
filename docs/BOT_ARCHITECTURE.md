@@ -150,5 +150,10 @@ Notes / caveats to keep in mind:
    past captions, renders are versioned (`_r1`, `_r2`, …), and
    "different caption" regenerates via Claude avoiding rejected ones.
    Keyword fallback (shorter/longer) when Claude is unavailable.
-5. Local Bot API server for >50 MB files.
+5. ✅ **Local Bot API server for >50 MB files** — `TOKCUT_BOT_API_URL`
+   flips the bot into PTB `local_mode` against a self-hosted
+   `telegram-bot-api` (compose file: `docker-compose.botapi.yml`), lifting
+   the up/download cap from 50 MB to 2 GB so full iPhone clips go through.
+   Downloads resolve to shared local paths; the bot logs the active
+   endpoint at startup. Cloud API stays the default when the var is unset.
 6. (Later) auto-music, beat-aligned cuts.
