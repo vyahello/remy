@@ -362,10 +362,13 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 ideas, subject = await asyncio.to_thread(
                     suggest_captions, dest, src["duration"])
-                lines = "\n".join(f"▫️ {c}" for c in ideas[:3])
+                # code spans are tap-to-copy on mobile Telegram
+                lines = "\n".join(
+                    f"▫️ `{c.replace('`', '')}`" for c in ideas[:3])
                 await ideas_msg.edit_text(
                     f"👀 Claude saw: {subject}\n\n"
-                    f"💡 Caption ideas — copy one into TikTok:\n{lines}")
+                    f"💡 Caption ideas — tap one to copy it:\n{lines}",
+                    parse_mode="Markdown")
             except Exception as exc:  # noqa: BLE001 — best-effort
                 log.warning("caption ideas failed: %s", exc)
                 await ideas_msg.edit_text(
