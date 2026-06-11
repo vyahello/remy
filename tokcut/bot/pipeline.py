@@ -6,6 +6,7 @@ app.py); in step 3 Claude Code takes over the caption wording.
 """
 
 import os
+import re
 
 from ..analysis import (
     assign_speeds,
@@ -53,3 +54,33 @@ def format_plan(
         tag = "▶️ 1.00x" if round(sp, 2) == 1.0 else f"⏩ {sp:.2f}x"
         lines.append(f"`{s:6.1f}–{e:6.1f}`  {tag}")
     return "\n".join(lines)
+
+
+def friendly_progress(line: str) -> str | None:
+    """Translate a pipeline log line into a short human update.
+
+    The edit pipeline streams technical status lines (the full edit
+    decision list, probe data); in chat we only surface what a creator
+    cares about. Returns None for lines that should stay in the logs.
+    """
+    if line.startswith("edit plan"):
+        m = re.search(r"\((\d+) segments, ~([\d.]+)s output\)", line)
+        if m:
+            return (f"✂️ cutting to ~{float(m.group(2)):.0f}s "
+                    f"({m.group(1)} pieces)")
+        return "✂️ cut plan ready"
+    if line.startswith("landscape source"):
+        return "🖥️ native resolution kept — overlay your own caption"
+    if line.startswith("crop:"):
+        return "🔍 zoomed into the action"
+    if line.startswith("beat-align"):
+        return "🥁 cuts snapped to the beat"
+    if line.startswith("music:"):
+        return "🎵" + line.removeprefix("music:")
+    if line.startswith("audio: muted"):
+        return "🔇 muted — add a trending sound in-app"
+    if line.startswith("audio:"):
+        return "🔊" + line.removeprefix("audio:")
+    if line.startswith("rendering"):
+        return "🎬 encoding… (takes a couple of minutes)"
+    return None  # probe data, segment rows, caption y — log-only

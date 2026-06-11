@@ -31,7 +31,7 @@ from ..judge import (
     suggest_caption,
 )
 from .config import BotConfig, is_allowed, load_config
-from .pipeline import derive_caption
+from .pipeline import derive_caption, friendly_progress
 from .session import (
     EditSession,
     apply_updates,
@@ -110,8 +110,14 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
         progress: list[str] = []
 
         def notify(line: str) -> None:
-            # called from the worker thread — marshal back to the loop
-            progress.append(line)
+            # called from the worker thread — marshal back to the loop.
+            # Full pipeline lines go to the log; chat gets the short,
+            # human version only.
+            log.info("edit[r%d]: %s", rev, line)
+            human = friendly_progress(line)
+            if human is None:
+                return
+            progress.append(human)
             text = f"🎞️ Take {rev}\n" + "\n".join(progress[-6:])
             asyncio.run_coroutine_threadsafe(
                 status.edit_text(text[:4000]), loop)

@@ -118,3 +118,23 @@ def test_format_plan_renders_segments():
     assert "2 segments" in text
     assert "1.00x" in text   # action segment
     assert "3.20x" in text   # fast segment
+
+
+def test_friendly_progress_translates_key_lines():
+    from tokcut.bot.pipeline import friendly_progress as fp
+    plan = ("edit plan (8 segments, ~50.0s output):\n"
+            "   72.15 -   73.45  HOOK   1.0x (cold open)")
+    assert fp(plan) == "✂️ cutting to ~50s (8 pieces)"
+    assert "native resolution" in fp("landscape source: native ...")
+    assert fp("rendering…").startswith("🎬")
+    assert fp("audio: muted (add a TikTok sound in-app)").startswith("🔇")
+    assert fp("music: synthesized phonk @ 132bpm") == \
+        "🎵 synthesized phonk @ 132bpm"
+    assert fp("beat-align: cuts snapped to the 132bpm grid").startswith("🥁")
+
+
+def test_friendly_progress_hides_technical_lines():
+    from tokcut.bot.pipeline import friendly_progress as fp
+    assert fp("source: 1920x1080  76.5s @ 60fps (bt709 transfer)") is None
+    assert fp("caption at y=1277 (auto)") is None
+    assert fp("   8.33 -   41.50  FAST  2.19x") is None
