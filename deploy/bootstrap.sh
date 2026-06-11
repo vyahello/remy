@@ -99,6 +99,35 @@ ExecStop=/usr/bin/docker compose -f docker-compose.botapi.yml down
 WantedBy=multi-user.target
 UNIT
 
+echo "==> daily media GC (Bot API server cache + stale workdir files)"
+cat > /etc/systemd/system/tokcut-gc.service <<UNIT
+[Unit]
+Description=Prune old tokcut media (Bot API cache, stale workdir)
+
+[Service]
+Type=oneshot
+# the Bot API server re-downloads from Telegram on demand, so pruning
+# its media cache is safe; binlogs at the dir root are NOT touched
+ExecStart=/usr/bin/find /var/lib/telegram-bot-api -mindepth 2 -type f \
+    \( -path '*/videos/*' -o -path '*/documents/*' -o -path '*/photos/*' \
+       -o -path '*/music/*' -o -path '*/animations/*' -o -path '*/temp/*' \) \
+    -mmin +1440 -delete
+# unapproved sessions older than 3 days are abandoned
+ExecStart=/usr/bin/find /home/$SVC_USER/.tokcut/work -type f \
+    -mtime +3 -delete
+UNIT
+cat > /etc/systemd/system/tokcut-gc.timer <<'UNIT'
+[Unit]
+Description=Daily tokcut media GC
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 echo "==> bot service (rendered for user $SVC_USER)"
 sed "s/^User=tokcut/User=$SVC_USER/; s/^Group=tokcut/Group=$SVC_USER/; \
      s|/home/tokcut|/home/$SVC_USER|g" \
@@ -114,6 +143,7 @@ chmod 440 /etc/sudoers.d/tokcut-deploy
 
 systemctl daemon-reload
 systemctl enable tokcut-botapi tokcut-bot
+systemctl enable --now tokcut-gc.timer
 
 echo
 echo "Bootstrap done. Next:"
