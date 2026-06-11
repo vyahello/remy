@@ -105,3 +105,28 @@ def test_filtergraph_landscape_keeps_crop():
     fc, _v, _a = R.build_filtergraph(
         segs, SRC, None, 60, crop=(10, 20, 800, 600))
     assert "crop=800:600:10:20" in fc
+
+
+def test_look_filter_variants():
+    sdr_cam = {"transfer": "bt709"}
+    hdr = {"transfer": "arib-std-b67"}
+    assert "unsharp" in R.look_filter(sdr_cam, screen=True)
+    assert "unsharp" not in R.look_filter(hdr, screen=False)
+    assert "saturation=1.08" in R.look_filter(hdr, screen=False)
+    assert "brightness" in R.look_filter(sdr_cam, screen=False)
+
+
+def test_filtergraph_applies_look():
+    segs = [(0, 5, 1.0)]
+    fc, _v, _a = R.build_filtergraph(segs, SRC, None, 60,
+                                     look="eq=contrast=1.05")
+    assert "eq=contrast=1.05,format" in fc
+    fc2, _v, _a = R.build_filtergraph(segs, SRC, LAY, 60,
+                                      look="eq=contrast=1.05")
+    assert "eq=contrast=1.05,pad" in fc2  # grade before the black bars
+
+
+def test_filtergraph_no_look_by_default():
+    segs = [(0, 5, 1.0)]
+    fc, _v, _a = R.build_filtergraph(segs, SRC, None, 60)
+    assert "eq=" not in fc

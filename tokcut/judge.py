@@ -276,13 +276,15 @@ Available settings:
   "yellow" (black on yellow), "black" (white on black)
 - hook: cold-open teaser of the best beat (true/false)
 - crop: auto-zoom into the action, dropping static margins (true/false)
+- look: finishing color grade — contrast/saturation pop, crisper text
+  (true/false; "too saturated"/"flat colors" feedback maps here)
 - keep_audio: keep the original ambient sound (default is muted)
 - music: "synthwave", "phonk", or "off" (baked-in generated music)
 
 Reply with ONLY a JSON object, null for anything that should not change:
 {{"caption": null, "regenerate_caption": false, "target": null,
  "caption_pos": null, "style": null, "hook": null, "crop": null,
- "keep_audio": null, "music": null,
+ "look": null, "keep_audio": null, "music": null,
  "reply": "<one short line telling the creator what you'll change>"}}
 
 Change only what the feedback implies — when in doubt, change less.

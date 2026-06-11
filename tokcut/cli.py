@@ -31,7 +31,7 @@ from .analysis import (
 from .caption import DEFAULT_STYLE, STYLES, check_caption, make_caption
 from .layout import compute_layout
 from .music import STYLE_BPM, generate, write_wav
-from .render import render
+from .render import look_filter, render
 from .types import Layout, SourceInfo, SpeedSegment
 
 
@@ -73,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
                     default=True,
                     help="Cold-open on the most action-packed beat of the "
                          "video before the chronological cut (default on)")
+    ap.add_argument("--look", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="finishing grade: contrast/saturation pop, "
+                         "crisper text on screen recordings (default on)")
     ap.add_argument("--crop", action=argparse.BooleanOptionalAction,
                     default=True,
                     help="Auto-zoom into the active region, dropping "
@@ -150,6 +154,7 @@ def edit(
     caption_pos: str = "auto",
     hook: bool = True,
     crop_enabled: bool = True,
+    look_enabled: bool = True,
     keep_audio: bool = False,
     music: str | None = None,
     music_style: str = "synthwave",
@@ -254,9 +259,13 @@ def edit(
             notify("audio: original ambient" if keep_audio
                    else "audio: muted (add a TikTok sound in-app)")
 
+        look = look_filter(src, screen=landscape) if look_enabled else ""
+        if look:
+            notify("look: finishing grade applied")
+
         notify("rendering…")
         render(input_path, segs, cap_png, src, lay, out,
-               crf, preset, music_path, keep_audio, crop=crop)
+               crf, preset, music_path, keep_audio, crop=crop, look=look)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
@@ -279,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             caption_pos=args.caption_pos,
             hook=args.hook,
             crop_enabled=args.crop,
+            look_enabled=args.look,
             keep_audio=args.keep_audio,
             music=args.music,
             music_style=args.music_style,

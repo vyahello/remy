@@ -33,6 +33,24 @@ def color_args(src: SourceInfo) -> list[str]:
             "-colorspace", "bt709"]
 
 
+def look_filter(src: SourceInfo, screen: bool) -> str:
+    """A subtle finishing grade — punchy, never garish.
+
+    Screen recordings get contrast + saturation and a mild sharpen so
+    UI text stays crisp after the lanczos scale. SDR camera footage
+    gets a touch more pop; HDR (HLG/PQ) is treated gently — its
+    transfer curve already carries the look, heavy eq would break it.
+    All filters are 10-bit safe.
+    """
+    hdr = src.get("transfer") in ("arib-std-b67", "smpte2084")
+    if screen:
+        return ("eq=contrast=1.05:saturation=1.15,"
+                "unsharp=5:5:0.35:5:5:0.0")
+    if hdr:
+        return "eq=contrast=1.03:saturation=1.08"
+    return "eq=contrast=1.06:brightness=0.015:saturation=1.18"
+
+
 def build_filtergraph(
     segs: list[SpeedSegment],
     src: SourceInfo,
@@ -41,8 +59,12 @@ def build_filtergraph(
     with_music: bool = False,
     keep_audio: bool = False,
     crop: tuple[int, int, int, int] | None = None,
+    look: str = "",
 ) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
+
+    `look` is an optional finishing-grade filter snippet (look_filter),
+    applied after the scale.
 
     Each segment is its own seek-decoded ffmpeg input (`-ss A -to B -i`),
     so segments decode one at a time as concat consumes them. The earlier
@@ -84,15 +106,17 @@ def build_filtergraph(
         ambient = None
 
     crop_f = f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}," if crop else ""
+    look_f = f"{look}," if look else ""
     if lay is None:
         # landscape: native (post-crop) resolution, even dims, no caption
         fc.append(f"[vc]{crop_f}fps={fps},"
                   f"scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos,"
-                  f"format=yuv420p10le[vout]")
+                  f"{look_f}format=yuv420p10le[vout]")
     else:
         vw, vh, vx, vy = lay["vw"], lay["vh"], lay["vx"], lay["vy"]
+        # grade before the pad so black bars stay pure black
         fc.append(f"[vc]{crop_f}fps={fps},scale={vw}:{vh}:flags=lanczos,"
-                  f"pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
+                  f"{look_f}pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
         fc.append(
             f"[base][{cap_idx}:v]overlay={lay['cap_x']}:{lay['cap_y']},"
             f"format=yuv420p10le[vout]")
@@ -126,11 +150,12 @@ def render(
     music_path: str | None = None,
     keep_audio: bool = False,
     crop: tuple[int, int, int, int] | None = None,
+    look: str = "",
 ) -> str:
     fps = min(60, round(src["fps"]))
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
-        keep_audio=keep_audio, crop=crop)
+        keep_audio=keep_audio, crop=crop, look=look)
 
     cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats"]
     for s, e, _sp in segs:

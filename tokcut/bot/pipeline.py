@@ -75,6 +75,8 @@ def friendly_progress(line: str) -> str | None:
         return "🔍 zoomed into the action"
     if line.startswith("beat-align"):
         return "🥁 cuts snapped to the beat"
+    if line.startswith("look:"):
+        return "✨ finishing grade applied"
     if line.startswith("music:"):
         return "🎵" + line.removeprefix("music:")
     if line.startswith("audio: muted"):

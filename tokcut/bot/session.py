@@ -24,6 +24,7 @@ class EditParams:
     caption_pos: str = "auto"
     hook: bool = True
     crop: bool = True
+    look: bool = True  # finishing grade (contrast/saturation pop)
     keep_audio: bool = False
     music_style: str | None = None  # None = muted export
 
@@ -97,7 +98,7 @@ def validate_updates(raw: dict) -> dict:
     if isinstance(style, str) and style in STYLES:
         out["style"] = style
 
-    for key in ("hook", "crop", "keep_audio"):
+    for key in ("hook", "crop", "look", "keep_audio"):
         val = raw.get(key)
         if isinstance(val, bool):
             out[key] = val
@@ -131,6 +132,7 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
         p.style = updates["style"]
         changes.append(f"caption style → {p.style}")
     for key, label in (("hook", "hook"), ("crop", "auto-zoom"),
+                       ("look", "color grade"),
                        ("keep_audio", "ambient audio")):
         if key in updates and updates[key] != getattr(p, key):
             setattr(p, key, updates[key])
@@ -156,6 +158,8 @@ def tweak_updates(key: str, params: EditParams) -> dict:
         return {"hook": not params.hook}
     if key == "crop":
         return {"crop": not params.crop}
+    if key == "look":
+        return {"look": not params.look}
     if key in ("phonk", "synthwave"):
         return {"music": key}
     if key == "nomusic":
