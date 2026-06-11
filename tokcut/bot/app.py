@@ -97,15 +97,42 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         "🎬 Hey! I'm *tokcut* — your pocket TikTok editor.\n\n"
-        "Just send me a clip — no command needed — *as a file* 📎 "
-        "(plain video messages get squashed by Telegram) and I'll cut "
-        "the boring bits, speed-ramp the rest, and drop a caption where "
-        "it won't cover the action.\n\n"
-        "✍️ Add a message caption to choose the on-video text — or let "
-        "Claude watch the clip and write one.\n"
-        "🖥️ Landscape screen recordings keep native resolution, no "
-        "caption (you get copyable ideas instead).\n"
-        "📋 /status shows the current session and queue.",
+        "Send me a clip *as a file* 📎 and I'll send back a ready-to-post "
+        "edit. That's it — /help has the details.",
+        parse_mode="Markdown",
+    )
+
+
+async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.application.bot_data["config"]
+    if not is_allowed(_user_id(update), cfg.allowed_user_id):
+        return
+    await update.message.reply_text(
+        "📖 *How to use tokcut*\n\n"
+        "*1. Send a clip — always as a file* 📎 → File\n"
+        "Plain video messages get recompressed by Telegram and the "
+        "quality is ruined before I see it.\n\n"
+        "*2. What happens to it*\n"
+        "📱 *Vertical (phone) clips* → 1080x1920, auto length (~30s), "
+        "styled caption placed off the action. Add a message caption "
+        "with the file to pick the wording yourself; otherwise Claude "
+        "watches the clip and writes one.\n"
+        "🖥️ *Landscape (screen recordings)* → native resolution so "
+        "TikTok can go fullscreen, recorder UI trimmed, zoom to the "
+        "action window, *no baked caption* — Claude sends wording ideas "
+        "to copy into TikTok instead.\n"
+        "🔇 Exports are *muted* — add a trending sound in the app "
+        "(ranks better).\n\n"
+        "*3. Review the take*\n"
+        "✅ *Approve* — done; working files are cleaned up.\n"
+        "🔁 *Redo* — tap a quick tweak (length, hook, zoom, music, "
+        "caption, style) or just type what to change: "
+        "_\"shorter and punchier\", \"caption at the top\", "
+        "\"add phonk music\"_.\n\n"
+        "*Commands*\n"
+        "/status — render queue, current take, disk\n"
+        "/start — short hello\n"
+        "/help — this",
         parse_mode="Markdown",
     )
 
@@ -139,9 +166,9 @@ async def status_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _post_init(app: Application) -> None:
     # registers the ☰ command menu next to the input field
     await app.bot.set_my_commands([
-        BotCommand("status", "current session, queue, disk"),
-        BotCommand("help", "how to use the bot"),
-        BotCommand("start", "say hi"),
+        BotCommand("status", "render queue, current take, disk"),
+        BotCommand("help", "full guide: formats, captions, redo tweaks"),
+        BotCommand("start", "short hello"),
     ])
 
 
@@ -505,7 +532,8 @@ def build_application(cfg: BotConfig) -> Application:
     app.bot_data["config"] = cfg
     app.bot_data["render_lock"] = asyncio.Lock()
     app.bot_data["sessions"] = {}
-    app.add_handler(CommandHandler(["start", "help"], start))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(
