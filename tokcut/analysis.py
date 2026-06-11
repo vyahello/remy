@@ -276,6 +276,28 @@ def assign_speeds(
     return out, out_dur(speeds)
 
 
+# TikTok's main ranking signal is completion rate, so shorter wins —
+# ~25-40s is the sweet spot for screen/tutorial content. Aim for the
+# low end, but never compress real-time action to get there.
+AUTO_SWEET = 30.0  # output length to aim for when compressing
+AUTO_MAX = 35.0    # natural pacing up to this long is left alone
+
+
+def auto_target(runs: list[Segment]) -> float | None:
+    """Pick a TikTok-friendly output length, or None to keep base speeds.
+
+    If the natural pacing (base tier speeds) already lands within
+    AUTO_MAX, no solving is needed. Otherwise compress toward AUTO_SWEET
+    — floored by the 1x action time, which is never sped up: a clip
+    whose genuine action runs 45s gets ~45s, not a butchered 30.
+    """
+    _, natural = assign_speeds(runs)
+    if natural <= AUTO_MAX:
+        return None
+    action = sum(e - s for s, e, t in runs if int(t) == 2)
+    return max(AUTO_SWEET, action * 1.05)
+
+
 MIN_SEG_SRC = 0.3  # never align a segment below this many source-seconds
 
 

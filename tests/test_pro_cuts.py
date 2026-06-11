@@ -210,3 +210,26 @@ def test_beat_align_hook_gap_respected():
     assert times[0] % 1.0 == pytest.approx(0.0, abs=1e-6)
     # the chronological segment's start must be untouched
     assert aligned[1][0] == pytest.approx(1.5)
+
+
+# ----------------------------------------------------------- auto_target
+
+def test_auto_target_short_video_keeps_base_speeds():
+    # natural pacing well under AUTO_MAX -> no solving needed
+    runs = [[0.0, 10.0, 2], [10.0, 20.0, 1]]  # ~10 + 10/1.7 ≈ 15.9s
+    assert A.auto_target(runs) is None
+
+
+def test_auto_target_long_video_compresses_to_sweet_spot():
+    # mostly lag/dead: natural ≈ 20 + 100/1.7 + 60/3.2 ≈ 97s -> compress
+    runs = [[0.0, 20.0, 2], [20.0, 120.0, 1], [120.0, 180.0, 0]]
+    t = A.auto_target(runs)
+    assert t == A.AUTO_SWEET
+
+
+def test_auto_target_never_squeezes_action():
+    # 50s of real action sets the floor above the sweet spot
+    runs = [[0.0, 50.0, 2], [50.0, 150.0, 0]]
+    t = A.auto_target(runs)
+    assert t is not None
+    assert t >= 50.0 * 1.05 - 1e-9

@@ -54,17 +54,18 @@ System requirements: `ffmpeg`/`ffprobe` with libx265, fonts
 ## 🚀 Use
 
 ```bash
-# preview the cut plan (instant, no encode)
-tokcut clip.MOV -c "How I set this up ⚡" --target 50 --dry-run
+# preview the cut plan (instant, no encode) — length is solved
+# automatically (TikTok completion-rate sweet spot, action never sped up)
+tokcut clip.MOV -c "How I set this up ⚡" --dry-run
 
 # render — muted by default, you add a trending sound in TikTok
-tokcut clip.MOV -c "How I set this up ⚡" --target 50
+tokcut clip.MOV -c "How I set this up ⚡"
 
-# keep your original ambient audio instead of muting
-tokcut clip.MOV -c "How I set this up ⚡" --target 50 --keep-audio
+# pin the length yourself / keep your original ambient audio
+tokcut clip.MOV -c "How I set this up ⚡" --target 45 --keep-audio
 
-# bake in a synthesized phonk track (for off-platform posts)
-tokcut clip.MOV -c "How I set this up ⚡" --target 50 --music --music-style phonk
+# bake in a synthesized phonk track, cuts snapped to the beat
+tokcut clip.MOV -c "How I set this up ⚡" --music --music-style phonk
 
 # or your own audio file
 tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
@@ -74,7 +75,8 @@ tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
 
 > 💡 **Pro tip:** always `--dry-run` first — it prints the cut plan
 > (which seconds get fast-forwarded vs kept) in a fraction of a second,
-> so you can dial in `--target` before committing to a multi-minute encode.
+> so you can sanity-check the auto-picked length (or pin `--target N`)
+> before committing to a multi-minute encode.
 
 ## ⚙️ How it works
 

@@ -13,6 +13,7 @@ import numpy as np
 from . import __version__
 from .analysis import (
     assign_speeds,
+    auto_target,
     beat_align,
     classify,
     content_crop,
@@ -31,6 +32,16 @@ from .render import render
 from .types import SourceInfo, SpeedSegment
 
 
+def _parse_target(value: str) -> float | str | None:
+    """--target accepts seconds, 'auto', or 'none' (base speeds)."""
+    low = value.strip().lower()
+    if low == "auto":
+        return "auto"
+    if low in ("none", "full"):
+        return None
+    return float(value)  # ValueError -> argparse usage error
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="tokcut", description="Auto-editor for vertical TikTok clips")
@@ -38,8 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-c", "--caption", required=True,
                     help="Persistent caption text (emoji supported)")
     ap.add_argument("-o", "--output", default=None)
-    ap.add_argument("--target", type=float, default=None,
-                    help="Target output duration in seconds")
+    ap.add_argument("--target", type=_parse_target, default="auto",
+                    help="Output length: seconds, 'auto' (default — solve "
+                         "a TikTok-friendly length from the content), or "
+                         "'none' (keep base tier speeds)")
     ap.add_argument("--style", choices=sorted(STYLES),
                     default=DEFAULT_STYLE,
                     help="caption style preset (default: %(default)s)")
@@ -74,14 +87,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def plan(
-    input_path: str, target: float | None, hook: bool = True
+    input_path: str, target: float | str | None, hook: bool = True
 ) -> tuple[SourceInfo, list[SpeedSegment], float, np.ndarray,
            tuple[float, float] | None]:
     """Analysis + edit decisions.
 
-    Returns (src, segments, est, frames, hook_window). When a hook is
-    chosen, the first segment is a 1x cold open of the video's best beat;
-    leading/trailing dead footage is hard-trimmed either way.
+    `target` is seconds, None (base tier speeds), or "auto" — solve a
+    TikTok-friendly length from the content (completion-rate sweet spot,
+    floored by the real-time action). Returns (src, segments, est,
+    frames, hook_window). When a hook is chosen, the first segment is a
+    1x cold open of the video's best beat; leading/trailing dead footage
+    is hard-trimmed either way.
     """
     src = probe(input_path)
     raw_scores, frames = motion_scores(input_path, src)
@@ -92,6 +108,9 @@ def plan(
     dur_eff = dur - 2.0 if dur > 20.0 else dur
     runs = trim_dead_ends(
         to_segments(classify(scores), duration=dur_eff))
+    if target == "auto":
+        target = auto_target(runs)
+    target = cast("float | None", target)
 
     hook_win = pick_hook(scores, dur_eff) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
@@ -108,7 +127,7 @@ def edit(
     caption: str,
     *,
     output: str | None = None,
-    target: float | None = None,
+    target: float | str | None = "auto",
     style: str = DEFAULT_STYLE,
     caption_pos: str = "auto",
     hook: bool = True,

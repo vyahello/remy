@@ -122,7 +122,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             await asyncio.to_thread(
                 edit, session.source, session.caption,
                 output=out,
-                target=p.target,
+                target=p.target if p.target is not None else "auto",
                 style=p.style,
                 caption_pos=p.caption_pos,
                 hook=p.hook,

@@ -18,7 +18,7 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 |------|---------|---------|
 | `-c / --caption` | required | Persistent caption. Emoji supported (⚡🔥🧪💻…). Auto-balanced onto two lines. |
 | `-o / --output` | `<input>_tokcut.mp4` | Output path. |
-| `--target N` | none | Solve speed-ups so the result is ≈ N seconds. Without it, base speeds are used (dead 3.2x, lag 1.7x, action 1x). |
+| `--target` | `auto` | Output length. `auto` (default) solves a TikTok-friendly length: natural pacing ≤35s is kept, longer compresses toward the ~30s completion-rate sweet spot — floored by the real-time action, which is never sped up. A number solves for ≈ N seconds; `none` keeps base tier speeds (dead 3.2x, lag 1.7x, action 1x). |
 | `--style` | `purple` | Caption look: `purple` (purple bold-italic on white — the house style), `yellow` (black on yellow), `black` (white on black). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region inside the TikTok safe zone, so it never covers the screen/device. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
 | `--hook` / `--no-hook` | on | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. The single biggest retention lever. |

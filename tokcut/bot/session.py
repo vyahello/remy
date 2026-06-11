@@ -9,6 +9,7 @@ render.
 import os
 from dataclasses import dataclass, field
 
+from ..analysis import AUTO_SWEET
 from ..caption import DEFAULT_STYLE, STYLES
 
 VALID_CAPTION_POS = ("auto", "top", "bottom")
@@ -18,7 +19,7 @@ MIN_TARGET, MAX_TARGET = 10.0, 120.0
 
 @dataclass
 class EditParams:
-    target: float = 50.0
+    target: float | None = None  # None = auto (TikTok-friendly length)
     style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
     hook: bool = True
@@ -43,7 +44,8 @@ class EditSession:
     def summary(self) -> str:
         p = self.params
         music = p.music_style or "muted"
-        return (f'caption="{self.caption}" target={p.target:.0f}s '
+        target = "auto" if p.target is None else f"{p.target:.0f}s"
+        return (f'caption="{self.caption}" target={target} '
                 f"style={p.style} caption_pos={p.caption_pos} "
                 f"hook={p.hook} crop={p.crop} audio="
                 f"{'ambient' if p.keep_audio else music}")
@@ -139,11 +141,13 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     return changes
 
 
-def fallback_updates(feedback: str, current_target: float) -> dict:
+def fallback_updates(feedback: str,
+                     current_target: float | None) -> dict:
     """Tiny deterministic interpretation when Claude is unavailable."""
+    base = current_target if current_target is not None else AUTO_SWEET
     low = feedback.lower()
     if "short" in low:
-        return {"target": current_target * 0.8}
+        return {"target": base * 0.8}
     if "long" in low:
-        return {"target": current_target * 1.2}
+        return {"target": base * 1.2}
     return {}

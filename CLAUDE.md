@@ -51,7 +51,10 @@ edited clip ready to post (see `docs/IDEAS.md`).
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).
 5. **Speeds** (`analysis.assign_speeds`) — action 1.0x, lag ≈1.7x,
    dead ≈3.2x; `--target N` binary-searches the fast-tier speeds to hit N
-   seconds.
+   seconds. Default is `--target auto` (`analysis.auto_target`): natural
+   pacing ≤35s is kept, longer compresses toward the ~30s completion-rate
+   sweet spot, floored by the 1x action time (action is never sped up).
+   `--target none` keeps base tier speeds.
 6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
    renders purple bold-italic on rounded white boxes + color emoji. A
    saliency map (brightness-dominant, because screens glow in dark-room

@@ -7,7 +7,6 @@ import os
 from dataclasses import dataclass
 
 DEFAULT_WORKDIR = os.path.expanduser("~/.tokcut/work")
-DEFAULT_TARGET = 50.0
 
 
 @dataclass(frozen=True)
@@ -15,7 +14,7 @@ class BotConfig:
     telegram_token: str
     allowed_user_id: int
     workdir: str
-    default_target: float
+    default_target: float | None  # None = auto (TikTok-friendly length)
     claude_judge: bool
     # Local Bot API server (step 5) — empty unless TOKCUT_BOT_API_URL is set.
     # When set, the bot talks to a self-hosted telegram-bot-api instance,
@@ -54,11 +53,14 @@ def load_config(env: dict[str, str] | None = None) -> BotConfig:
     workdir = os.path.expanduser(
         src.get("TOKCUT_WORKDIR", "").strip() or DEFAULT_WORKDIR)
 
-    target_raw = src.get("TOKCUT_TARGET", "").strip()
-    try:
-        default_target = float(target_raw) if target_raw else DEFAULT_TARGET
-    except ValueError as exc:
-        raise RuntimeError("TOKCUT_TARGET must be a number") from exc
+    target_raw = src.get("TOKCUT_TARGET", "").strip().lower()
+    default_target: float | None = None  # auto: solved from the content
+    if target_raw and target_raw != "auto":
+        try:
+            default_target = float(target_raw)
+        except ValueError as exc:
+            raise RuntimeError(
+                'TOKCUT_TARGET must be a number or "auto"') from exc
 
     claude_judge = src.get(
         "TOKCUT_CLAUDE", "on").strip().lower() not in ("off", "0", "false")

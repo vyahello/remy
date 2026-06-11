@@ -243,7 +243,9 @@ Available settings:
   no hashtags/quotes, no policy-risky wording, max one emoji at the end)
 - regenerate_caption: true when they want a different caption but didn't
   provide the text themselves
-- target: output length in seconds (10-120); shorter = faster pacing
+- target: output length in seconds (10-120); shorter = faster pacing.
+  Unset means automatic (a TikTok-friendly ~30s solved from the
+  content) — only set it when the creator asks about length/pacing
 - caption_pos: "auto" (calmest spot), "top", "bottom"
 - style: caption look — "purple" (purple on white, the default),
   "yellow" (black on yellow), "black" (white on black)

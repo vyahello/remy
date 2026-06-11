@@ -9,8 +9,16 @@ def test_load_config_ok():
                        "TOKCUT_ALLOWED_USER_ID": "42"})
     assert cfg.telegram_token == "tok"
     assert cfg.allowed_user_id == 42
-    assert cfg.default_target == 50.0
+    assert cfg.default_target is None  # auto length
     assert cfg.claude_judge is True
+
+
+def test_load_config_target_auto_and_explicit():
+    base = {"TELEGRAM_BOT_TOKEN": "t", "TOKCUT_ALLOWED_USER_ID": "1"}
+    assert load_config({**base, "TOKCUT_TARGET": "auto"}).default_target \
+        is None
+    assert load_config({**base, "TOKCUT_TARGET": "45"}).default_target \
+        == 45.0
 
 
 def test_load_config_claude_off():
