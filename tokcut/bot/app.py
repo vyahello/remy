@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -97,13 +97,52 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         "🎬 Hey! I'm *tokcut* — your pocket TikTok editor.\n\n"
-        "Send me a clip *as a file* 📎 (plain video messages get squashed "
-        "by Telegram) and I'll cut the boring bits, speed-ramp the rest, "
-        "and drop a caption where it won't cover the action.\n\n"
+        "Just send me a clip — no command needed — *as a file* 📎 "
+        "(plain video messages get squashed by Telegram) and I'll cut "
+        "the boring bits, speed-ramp the rest, and drop a caption where "
+        "it won't cover the action.\n\n"
         "✍️ Add a message caption to choose the on-video text — or let "
-        "Claude watch the clip and write one.",
+        "Claude watch the clip and write one.\n"
+        "🖥️ Landscape screen recordings keep native resolution, no "
+        "caption (you get copyable ideas instead).\n"
+        "📋 /status shows the current session and queue.",
         parse_mode="Markdown",
     )
+
+
+async def status_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.application.bot_data["config"]
+    if not is_allowed(_user_id(update), cfg.allowed_user_id):
+        return
+    lock: asyncio.Lock = context.application.bot_data["render_lock"]
+    session = _session(context, update.message.chat_id)
+    lines = ["🎛️ *tokcut status*",
+             f"render: {'🔴 busy' if lock.locked() else '🟢 idle'}"]
+    if session is None:
+        lines.append("session: none — send a clip 🎬")
+    else:
+        lines.append(f"session: take {session.revision} · "
+                     f"`{session.summary()}`")
+        if session.awaiting_feedback:
+            lines.append("✍️ waiting for your redo feedback")
+    try:
+        total = sum(
+            os.path.getsize(os.path.join(cfg.workdir, f))
+            for f in os.listdir(cfg.workdir))
+        lines.append(f"workdir: {total / 1048576:.0f} MB")
+    except OSError:
+        pass
+    await update.message.reply_text("\n".join(lines),
+                                    parse_mode="Markdown")
+
+
+async def _post_init(app: Application) -> None:
+    # registers the ☰ command menu next to the input field
+    await app.bot.set_my_commands([
+        BotCommand("status", "current session, queue, disk"),
+        BotCommand("help", "how to use the bot"),
+        BotCommand("start", "say hi"),
+    ])
 
 
 async def _claude_caption(msg, dest: str,
@@ -446,6 +485,7 @@ def build_application(cfg: BotConfig) -> Application:
     builder = (
         Application.builder()
         .token(cfg.telegram_token)
+        .post_init(_post_init)
         .connect_timeout(20.0)
         .read_timeout(120.0)
         .write_timeout(120.0)
@@ -465,7 +505,8 @@ def build_application(cfg: BotConfig) -> Application:
     app.bot_data["config"] = cfg
     app.bot_data["render_lock"] = asyncio.Lock()
     app.bot_data["sessions"] = {}
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler(["start", "help"], start))
+    app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(
         MessageHandler(filters.VIDEO | filters.Document.ALL, on_clip))
