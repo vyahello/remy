@@ -123,6 +123,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 edit, session.source, session.caption,
                 output=out,
                 target=p.target,
+                style=p.style,
                 caption_pos=p.caption_pos,
                 hook=p.hook,
                 crop_enabled=p.crop,
@@ -268,6 +269,7 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Plain words work:\n"
             "• “shorter and punchier”\n"
             "• “different caption” / “caption at the top”\n"
+            "• “yellow caption” / “white on black caption”\n"
             "• “no cold open”\n"
             "• “add phonk music”")
 

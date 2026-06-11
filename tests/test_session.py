@@ -80,6 +80,20 @@ def test_session_summary_mentions_state():
     assert "phonk" in text
 
 
+def test_validate_style():
+    assert validate_updates({"style": "yellow"}) == {"style": "yellow"}
+    assert validate_updates({"style": "comic-sans"}) == {}
+    assert validate_updates({"style": 7}) == {}
+
+
+def test_apply_style_change():
+    s = _session()
+    changes = apply_updates(s, {"style": "black"})
+    assert s.params.style == "black"
+    assert changes == ["caption style → black"]
+    assert "style=black" in s.summary()
+
+
 # ------------------------------------------------------------- cleanup
 
 def test_cleanup_removes_source_and_outputs(tmp_path):

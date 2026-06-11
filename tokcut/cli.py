@@ -23,7 +23,7 @@ from .analysis import (
     to_segments,
     trim_dead_ends,
 )
-from .caption import check_caption, make_caption
+from .caption import DEFAULT_STYLE, STYLES, check_caption, make_caption
 from .layout import compute_layout
 from .music import generate, write_wav
 from .render import render
@@ -39,6 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-o", "--output", default=None)
     ap.add_argument("--target", type=float, default=None,
                     help="Target output duration in seconds")
+    ap.add_argument("--style", choices=sorted(STYLES),
+                    default=DEFAULT_STYLE,
+                    help="caption style preset (default: %(default)s)")
     ap.add_argument("--caption-pos", choices=["auto", "top", "bottom"],
                     default="auto",
                     help="auto = place over the calmest region (default)")
@@ -105,6 +108,7 @@ def edit(
     *,
     output: str | None = None,
     target: float | None = None,
+    style: str = DEFAULT_STYLE,
     caption_pos: str = "auto",
     hook: bool = True,
     crop_enabled: bool = True,
@@ -151,7 +155,7 @@ def edit(
     tmp = tempfile.mkdtemp(prefix="tokcut_")
     try:
         cap_png = os.path.join(tmp, "caption.png")
-        cap_size = make_caption(caption, cap_png)
+        cap_size = make_caption(caption, cap_png, style=style)
 
         # layout works on post-crop dimensions; the caption-placement
         # saliency map must describe the same (cropped) picture
@@ -202,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         args.caption,
         output=args.output,
         target=args.target,
+        style=args.style,
         caption_pos=args.caption_pos,
         hook=args.hook,
         crop_enabled=args.crop,

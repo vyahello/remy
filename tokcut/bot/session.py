@@ -9,6 +9,8 @@ render.
 import os
 from dataclasses import dataclass, field
 
+from ..caption import DEFAULT_STYLE, STYLES
+
 VALID_CAPTION_POS = ("auto", "top", "bottom")
 VALID_MUSIC = ("synthwave", "phonk", "off")
 MIN_TARGET, MAX_TARGET = 10.0, 120.0
@@ -17,6 +19,7 @@ MIN_TARGET, MAX_TARGET = 10.0, 120.0
 @dataclass
 class EditParams:
     target: float = 50.0
+    style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
     hook: bool = True
     crop: bool = True
@@ -41,8 +44,8 @@ class EditSession:
         p = self.params
         music = p.music_style or "muted"
         return (f'caption="{self.caption}" target={p.target:.0f}s '
-                f"caption_pos={p.caption_pos} hook={p.hook} "
-                f"crop={p.crop} audio="
+                f"style={p.style} caption_pos={p.caption_pos} "
+                f"hook={p.hook} crop={p.crop} audio="
                 f"{'ambient' if p.keep_audio else music}")
 
 
@@ -88,6 +91,10 @@ def validate_updates(raw: dict) -> dict:
     if isinstance(pos, str) and pos in VALID_CAPTION_POS:
         out["caption_pos"] = pos
 
+    style = raw.get("style")
+    if isinstance(style, str) and style in STYLES:
+        out["style"] = style
+
     for key in ("hook", "crop", "keep_audio"):
         val = raw.get(key)
         if isinstance(val, bool):
@@ -118,6 +125,9 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     if "caption_pos" in updates and updates["caption_pos"] != p.caption_pos:
         p.caption_pos = updates["caption_pos"]
         changes.append(f"caption position → {p.caption_pos}")
+    if "style" in updates and updates["style"] != p.style:
+        p.style = updates["style"]
+        changes.append(f"caption style → {p.style}")
     for key, label in (("hook", "hook"), ("crop", "auto-zoom"),
                        ("keep_audio", "ambient audio")):
         if key in updates and updates[key] != getattr(p, key):

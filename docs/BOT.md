@@ -21,9 +21,10 @@ go through (the cloud API caps at 50 MB).
 5. The finished `.mp4` comes back as a **document** (no recompression)
    with [✅ Approve] [🔁 Redo] buttons.
 6. **Redo**: describe the change in plain words — "shorter and punchier",
-   "different caption", "caption at the top", "no cold open", "add phonk
-   music". Claude maps it to settings (validated and clamped in Python),
-   and revision r2 arrives with the same buttons. Sessions remember
+   "different caption", "caption at the top", "yellow caption" (style
+   presets: purple / yellow / black), "no cold open", "add phonk music".
+   Claude maps it to settings (validated and clamped in Python), and
+   revision r2 arrives with the same buttons. Sessions remember
    history and rejected captions, so regenerated captions don't repeat.
 7. **Approve cleans up**: tapping ✅ deletes the downloaded original and
    every rendered revision from the workdir (they already live in

@@ -39,6 +39,23 @@ def test_split_runs_separates_emoji():
 
 @pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
                     reason="DejaVu font not installed")
+@pytest.mark.parametrize("style", sorted(C.STYLES))
+def test_make_caption_styles(tmp_path, style):
+    out = tmp_path / f"cap_{style}.png"
+    w, h = C.make_caption("Styled caption", str(out), style=style)
+    assert out.exists() and w > 0 and h > 0
+
+
+@pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
+                    reason="DejaVu font not installed")
+def test_unknown_style_falls_back_to_default(tmp_path):
+    out = tmp_path / "cap.png"
+    w, h = C.make_caption("hi there", str(out), style="neon-zebra")
+    assert out.exists() and w > 0 and h > 0
+
+
+@pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
+                    reason="DejaVu font not installed")
 def test_make_caption_writes_png(tmp_path):
     out = tmp_path / "cap.png"
     w, h = C.make_caption("How I set up my brand new desk", str(out))

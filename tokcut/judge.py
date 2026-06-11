@@ -245,6 +245,8 @@ Available settings:
   provide the text themselves
 - target: output length in seconds (10-120); shorter = faster pacing
 - caption_pos: "auto" (calmest spot), "top", "bottom"
+- style: caption look — "purple" (purple on white, the default),
+  "yellow" (black on yellow), "black" (white on black)
 - hook: cold-open teaser of the best beat (true/false)
 - crop: auto-zoom into the action, dropping static margins (true/false)
 - keep_audio: keep the original ambient sound (default is muted)
@@ -252,8 +254,8 @@ Available settings:
 
 Reply with ONLY a JSON object, null for anything that should not change:
 {{"caption": null, "regenerate_caption": false, "target": null,
- "caption_pos": null, "hook": null, "crop": null, "keep_audio": null,
- "music": null,
+ "caption_pos": null, "style": null, "hook": null, "crop": null,
+ "keep_audio": null, "music": null,
  "reply": "<one short line telling the creator what you'll change>"}}
 
 Change only what the feedback implies — when in doubt, change less.

@@ -5,8 +5,17 @@ from PIL import Image, ImageDraw, ImageFont
 FONT_TEXT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
 FONT_EMOJI = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
 
-PURPLE: tuple[int, int, int, int] = (147, 88, 235, 255)
-BOX_FILL: tuple[int, int, int, int] = (252, 250, 255, 238)
+RGBA = tuple[int, int, int, int]
+
+# Caption style presets: name -> (text color, box fill). "purple" is the
+# house default; the others are high-contrast alternates pickable via
+# --style or a bot redo ("yellow caption").
+STYLES: dict[str, tuple[RGBA, RGBA]] = {
+    "purple": ((147, 88, 235, 255), (252, 250, 255, 238)),  # on white
+    "yellow": ((24, 22, 16, 255), (250, 214, 40, 242)),     # black on yellow
+    "black": ((250, 250, 250, 255), (18, 18, 22, 215)),     # white on black
+}
+DEFAULT_STYLE = "purple"
 
 # TikTok OCRs on-screen text; these terms commonly trigger moderation or
 # reduced reach. Keep captions descriptive rather than sensational. The
@@ -86,12 +95,15 @@ def _emoji_tile(ch: str, height: int) -> Image.Image | None:
 
 
 def make_caption(
-    text: str, out_path: str, font_size: int = 54
+    text: str, out_path: str, font_size: int = 54,
+    style: str = DEFAULT_STYLE,
 ) -> tuple[int, int]:
-    """Stacked rounded white boxes with purple bold-italic text + emoji.
+    """Stacked rounded boxes with bold-italic text + emoji.
 
+    `style` picks a STYLES preset (text color + box fill).
     Returns (width, height) of the saved PNG.
     """
+    text_color, box_fill = STYLES.get(style, STYLES[DEFAULT_STYLE])
     font = ImageFont.truetype(FONT_TEXT, font_size)
     lines = balance_lines(text)
     pad_x, pad_y, gap, radius = 30, 16, 12, 20
@@ -129,11 +141,11 @@ def make_caption(
         d.rounded_rectangle([bx + 3, y + 4, bx + width + 2 * pad_x + 3,
                              y + box_h + 4], radius, fill=(0, 0, 0, 70))
         d.rounded_rectangle([bx, y, bx + width + 2 * pad_x, y + box_h],
-                            radius, fill=BOX_FILL)
+                            radius, fill=box_fill)
         x = bx + pad_x
         for part in parts:
             if part[0] == "txt":
-                d.text((x, y + pad_y), part[1], font=font, fill=PURPLE)
+                d.text((x, y + pad_y), part[1], font=font, fill=text_color)
                 x += part[2]
             else:
                 tile = part[1]
