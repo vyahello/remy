@@ -25,8 +25,16 @@ echo "==> system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl rsync ffmpeg fonts-dejavu \
-    fonts-noto-color-emoji python3 python3-venv python3-pip \
-    docker.io docker-compose-v2
+    fonts-noto-color-emoji python3 python3-venv python3-pip
+
+# docker: only install the distro packages when docker is absent —
+# boxes with Docker CE (docker.com) conflict with Ubuntu's docker.io
+if ! command -v docker &>/dev/null; then
+    apt-get install -y -qq docker.io
+fi
+if ! docker compose version &>/dev/null; then
+    apt-get install -y -qq docker-compose-v2
+fi
 
 echo "==> service user + dirs"
 id "$SVC_USER" &>/dev/null || useradd -m -s /bin/bash "$SVC_USER"
