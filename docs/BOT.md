@@ -25,6 +25,10 @@ go through (the cloud API caps at 50 MB).
    music". Claude maps it to settings (validated and clamped in Python),
    and revision r2 arrives with the same buttons. Sessions remember
    history and rejected captions, so regenerated captions don't repeat.
+7. **Approve cleans up**: tapping ✅ deletes the downloaded original and
+   every rendered revision from the workdir (they already live in
+   Telegram). Sending a new clip likewise clears any abandoned session,
+   so the workdir doesn't fill up with ~250 MB originals.
 
 ## Claude auth (subscription OAuth)
 

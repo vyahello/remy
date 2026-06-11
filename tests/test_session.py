@@ -3,6 +3,7 @@
 from tokcut.bot.session import (
     EditSession,
     apply_updates,
+    cleanup_files,
     fallback_updates,
     validate_updates,
 )
@@ -77,6 +78,33 @@ def test_session_summary_mentions_state():
     text = s.summary()
     assert "original caption" in text
     assert "phonk" in text
+
+
+# ------------------------------------------------------------- cleanup
+
+def test_cleanup_removes_source_and_outputs(tmp_path):
+    src = tmp_path / "clip.mov"
+    r1 = tmp_path / "clip_tokcut_r1.mp4"
+    r2 = tmp_path / "clip_tokcut_r2.mp4"
+    for f in (src, r1, r2):
+        f.write_bytes(b"x" * 100)
+    s = EditSession(source=str(src), file_name="clip.mov", caption="c",
+                    outputs=[str(r1), str(r2)])
+    removed, freed = cleanup_files(s)
+    assert removed == 3
+    assert freed == 300
+    assert not src.exists() and not r1.exists() and not r2.exists()
+
+
+def test_cleanup_tolerates_missing_files(tmp_path):
+    r1 = tmp_path / "only_render.mp4"
+    r1.write_bytes(b"x" * 7)
+    s = EditSession(source=str(tmp_path / "gone.mov"), file_name="g.mov",
+                    caption="c", outputs=[str(r1), "/nonexistent/r2.mp4"])
+    removed, freed = cleanup_files(s)
+    assert removed == 1
+    assert freed == 7
+    assert not r1.exists()
 
 
 # ------------------------------------------------------------- fallback

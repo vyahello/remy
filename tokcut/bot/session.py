@@ -6,6 +6,7 @@ is the hard gate that clamps and whitelists them before they touch the
 render.
 """
 
+import os
 from dataclasses import dataclass, field
 
 VALID_CAPTION_POS = ("auto", "top", "bottom")
@@ -34,6 +35,7 @@ class EditSession:
     history: list[str] = field(default_factory=list)
     awaiting_feedback: bool = False
     past_captions: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)  # rendered revisions
 
     def summary(self) -> str:
         p = self.params
@@ -42,6 +44,26 @@ class EditSession:
                 f"caption_pos={p.caption_pos} hook={p.hook} "
                 f"crop={p.crop} audio="
                 f"{'ambient' if p.keep_audio else music}")
+
+
+def cleanup_files(session: EditSession) -> tuple[int, int]:
+    """Delete the session's source clip and every rendered revision.
+
+    Safe to call after delivery — the approved render (and the original)
+    already live in Telegram. Missing files are skipped silently.
+    Returns (files_removed, bytes_freed).
+    """
+    removed = 0
+    freed = 0
+    for path in (session.source, *session.outputs):
+        try:
+            size = os.path.getsize(path)
+            os.remove(path)
+        except OSError:
+            continue
+        removed += 1
+        freed += size
+    return removed, freed
 
 
 def validate_updates(raw: dict) -> dict:

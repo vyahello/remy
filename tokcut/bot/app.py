@@ -35,6 +35,7 @@ from .pipeline import derive_caption
 from .session import (
     EditSession,
     apply_updates,
+    cleanup_files,
     fallback_updates,
     validate_updates,
 )
@@ -130,6 +131,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             session.revision -= 1
             await msg.reply_text(f"⚠️ Edit failed: {exc}")
             return
+        session.outputs.append(out)  # tracked for cleanup on approve
 
         review_line = ""
         if cfg.claude_judge and claude_available():
@@ -178,6 +180,12 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     file_obj = msg.video or msg.document
     if file_obj is None:
         return
+
+    # A new clip abandons any unapproved session — clear its files now,
+    # before the download (re-sent files reuse the same dest path).
+    old = context.application.bot_data["sessions"].pop(msg.chat_id, None)
+    if old is not None:
+        cleanup_files(old)
 
     await msg.reply_text("⬇️ Downloading…")
     os.makedirs(cfg.workdir, exist_ok=True)
@@ -234,11 +242,17 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if query.data == APPROVE:
-        session.awaiting_feedback = False
+        # Session is done: the approved render (and the original) already
+        # live in Telegram, so the working copies can go.
+        context.application.bot_data["sessions"].pop(
+            query.message.chat_id, None)
+        removed, freed = cleanup_files(session)
         await query.edit_message_reply_markup(reply_markup=None)
+        note = (f"\n🧹 Cleaned up {removed} working files "
+                f"({freed / 1048576:.0f} MB freed)." if removed else "")
         await query.message.reply_text(
             "🎉 Approved — post it! (Muted exports: add a trending sound "
-            "in the TikTok app.)")
+            "in the TikTok app.)" + note)
     elif query.data == REDO:
         session.awaiting_feedback = True
         await query.edit_message_reply_markup(reply_markup=None)
