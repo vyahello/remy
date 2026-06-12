@@ -8,7 +8,7 @@ from tokcut import music as M
 
 def test_generate_length_and_range():
     track = M.generate(2.0, bpm=84, style="synthwave")
-    assert len(track) == int(2.0 * M.SR)
+    assert track.shape == (int(2.0 * M.SR), 2)  # stereo
     assert track.dtype == np.float32
     assert np.abs(track).max() <= 1.0 + 1e-6
 
@@ -36,7 +36,7 @@ def test_write_wav_roundtrip(tmp_path):
     assert os.path.exists(out)
     with wave.open(str(out), "rb") as w:
         assert w.getframerate() == M.SR
-        assert w.getnchannels() == 1
+        assert w.getnchannels() == 2  # stereo
         assert w.getnframes() == int(1.0 * M.SR)
 
 

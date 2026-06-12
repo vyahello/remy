@@ -17,7 +17,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.8"]
-bot = ["python-telegram-bot>=21"]
+# pedalboard: pro mastering chain for the generated music (the bot
+# deploy installs it; music.py falls back gracefully without it)
+bot = ["python-telegram-bot>=21", "pedalboard>=0.9"]
 
 [project.scripts]
 tokcut = "tokcut.cli:main"
