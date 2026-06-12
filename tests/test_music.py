@@ -53,3 +53,18 @@ def test_phonk_differs_from_explicit_slow_bpm():
     fast = generate(2.0, style="phonk")          # 132 default
     slow = generate(2.0, bpm=84, style="phonk")  # pinned slow
     assert not (fast == slow).all()
+
+
+def test_soundfont_env_override(tmp_path, monkeypatch):
+    sf = tmp_path / "kit.sf2"
+    sf.write_bytes(b"RIFF")
+    monkeypatch.setenv("TOKCUT_SOUNDFONT", str(sf))
+    assert M.find_soundfont() == str(sf)
+
+
+def test_oscillator_fallback_path():
+    # what CI exercises: no soundfont -> pure numpy composition
+    bed, drums, kicks = M._compose_osc(2.0, 132, "phonk",
+                                       np.random.default_rng(0))
+    assert bed.shape == drums.shape == (int(2.0 * M.SR), 2)
+    assert kicks and np.abs(drums).max() > 0

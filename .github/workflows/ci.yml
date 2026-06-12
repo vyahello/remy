@@ -64,6 +64,10 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             venv/bin/pip install -q -e ".[bot]"
+            # SoundFont instruments for the music generator;
+            # --no-deps skips its pyaudio extra (live playback —
+            # not needed, and it needs system portaudio to build)
+            venv/bin/pip install -q --no-deps tinysoundfont
             # drain: a restart mid-encode kills the take — wait for the
             # bot's .rendering marker to clear (up to ~20 min).
             # NB: plain `[ … ] && break` exits 1 under script_stop/set -e

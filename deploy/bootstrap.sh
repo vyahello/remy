@@ -63,6 +63,9 @@ sudo -u "$SVC_USER" bash -c "
     [ -d venv ] || python3 -m venv venv
     venv/bin/pip install -q --upgrade pip
     venv/bin/pip install -q -e '.[bot]'
+    # SoundFont music instruments (--no-deps: skip pyaudio,
+    # which is live-playback only and needs system portaudio)
+    venv/bin/pip install -q --no-deps tinysoundfont
 "
 
 echo "==> Claude Code CLI (for the judgment layer)"

@@ -19,7 +19,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 | `tokcut/analysis.py` | probe, motion scoring, saliency map, edit decision list |
 | `tokcut/caption.py` | caption PNG rendering + TikTok-eligibility checks |
 | `tokcut/layout.py` | 1080x1920 canvas layout + saliency-aware caption placement |
-| `tokcut/music.py` | chord-progression synthwave/phonk generator — numpy composition, optional pedalboard mastering |
+| `tokcut/music.py` | chord-progression synthwave/phonk generator — SoundFont instruments (tinysoundfont + GM .sf2) when available, numpy oscillators otherwise, optional pedalboard mastering |
 | `tokcut/render.py` | ffmpeg filtergraph builder + encode |
 | `tokcut/cli.py` | argparse entry point (`python -m tokcut` / `tokcut`) |
 | `tokcut/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
@@ -74,10 +74,14 @@ edited clip ready to post (see `docs/IDEAS.md`).
    Am-F-C-G), a fixed cowbell riff motif, arpeggios, a gliding
    tanh-driven 808 doubling the kick, sidechain pumping
    (`music._sidechain`), swung hats, gated-reverb snare and vinyl
-   crackle. The master bus runs Spotify's `pedalboard` FX chain
-   (compressor/chorus/reverb/limiter — installed via the `bot` extra)
-   with a lowpass+softclip fallback when it's absent. With synthesized
-   music the cuts are
+   crackle. The notes are played by **sampled GM instruments** when
+   `tinysoundfont` + a `.sf2` are present (choir/strings/piano for
+   phonk, polysynth/saw/synth-bass for synthwave, real drum kit;
+   discovery: `TOKCUT_SOUNDFONT`, `/usr/share/sounds/sf2`, `~/.tokcut`)
+   with numpy oscillators as fallback. The master bus runs Spotify's
+   `pedalboard` FX chain (compressor/chorus/reverb/limiter — installed
+   via the `bot` extra) with a lowpass+softclip fallback. With
+   synthesized music the cuts are
    **beat-aligned** (`analysis.beat_align`): the track's beat grid is exact
    (known bpm, beat at t=0), so segment boundaries are nudged to land on
    beats in output time — no beat detection involved. User-supplied music
