@@ -408,6 +408,32 @@ def window_crop(
                           min_keep, pad_px, max_keep_frac=0.97)
 
 
+def zoom_crop(
+    crop: tuple[int, int, int, int] | None,
+    src: SourceInfo,
+    zoom: float,
+) -> tuple[int, int, int, int] | None:
+    """Scale a crop box around its center by the creator's zoom dial.
+
+    `zoom` > 1 frames tighter, < 1 pulls wider; 1.0 keeps the auto
+    framing untouched. Applied on top of the auto crop (or the full
+    frame when no auto crop was chosen), clamped to the frame. Returns
+    None when the result is effectively the whole frame.
+    """
+    if abs(zoom - 1.0) < 1e-3:
+        return crop
+    x, y, w, h = crop if crop else (0, 0, src["w"], src["h"])
+    cx, cy = x + w / 2, y + h / 2
+    nw = min(src["w"], max(64, int(w / zoom)))
+    nh = min(src["h"], max(64, int(h / zoom)))
+    nx = int(min(max(0.0, cx - nw / 2), src["w"] - nw))
+    ny = int(min(max(0.0, cy - nh / 2), src["h"] - nh))
+    nw, nh = nw // 2 * 2, nh // 2 * 2
+    if nw >= src["w"] - 2 and nh >= src["h"] - 2:
+        return None
+    return nx, ny, nw, nh
+
+
 def assign_speeds(
     segs: list[Segment], target: float | None = None,
     max_action_speed: float = 1.0,

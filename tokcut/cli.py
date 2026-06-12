@@ -27,6 +27,7 @@ from .analysis import (
     to_segments,
     trim_dead_ends,
     window_crop,
+    zoom_crop,
 )
 from .caption import DEFAULT_STYLE, STYLES, check_caption, make_caption
 from .layout import compute_layout
@@ -81,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
                     default=True,
                     help="Auto-zoom into the active region, dropping "
                          "static margins (default on)")
+    ap.add_argument("--zoom", type=float, default=1.0,
+                    help="framing dial on top of the auto-zoom: >1 "
+                         "tighter, <1 wider (default 1.0 = auto)")
     ap.add_argument("--keep-audio", action="store_true",
                     help="Keep the original ambient audio. By default the "
                          "export is muted so you add a TikTok sound in-app.")
@@ -154,6 +158,7 @@ def edit(
     caption_pos: str = "auto",
     hook: bool = True,
     crop_enabled: bool = True,
+    zoom: float = 1.0,
     look_enabled: bool = True,
     keep_audio: bool = False,
     music: str | None = None,
@@ -192,6 +197,9 @@ def edit(
     if crop_enabled:
         crop = (window_crop(frames, src) if landscape
                 else content_crop(frames, src))
+    # the creator's framing dial sits on top of the auto framing — it
+    # applies even with the auto-crop off (a deliberate centered punch-in)
+    crop = zoom_crop(crop, src, zoom)
     if crop:
         notify(f"crop: zoom into {crop[2]}x{crop[3]} "
                f"at ({crop[0]},{crop[1]})")
@@ -288,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
             caption_pos=args.caption_pos,
             hook=args.hook,
             crop_enabled=args.crop,
+            zoom=args.zoom,
             look_enabled=args.look,
             keep_audio=args.keep_audio,
             music=args.music,

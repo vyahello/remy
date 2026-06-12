@@ -49,6 +49,9 @@ edited clip ready to post (see `docs/IDEAS.md`).
    action); prepend a ~1.3s cold-open hook of the strongest beat (biased
    late, where the payoff lives; `--no-hook` to disable); auto-zoom into
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).
+   `--zoom F` (`analysis.zoom_crop`) is the creator's framing dial on
+   top of the auto framing: >1 punches in tighter around the same
+   center, <1 pulls wider (bot buttons 🔎/🔭, free text "closer"/"wider").
 5. **Speeds** (`analysis.assign_speeds`) — action 1.0x, lag ≈1.7x,
    dead ≈3.2x; `--target N` binary-searches the fast-tier speeds to hit N
    seconds. Default is `--target auto` (`analysis.auto_target`): natural
@@ -65,7 +68,11 @@ edited clip ready to post (see `docs/IDEAS.md`).
    added in-app; `render` emits `-an`). `--keep-audio` retains the original
    ambient track; `--music` (`music.generate`) synthesizes a royalty-free
    synthwave/phonk track and `render` ducks it under the ambient audio with
-   `amix ... normalize=0`. With synthesized music the cuts are
+   `amix ... normalize=0`; any kept audio is loudness-normalized to
+   TikTok's -14 LUFS (`loudnorm`). Phonk has a gliding tanh-driven 808
+   doubling the kick, sidechain pumping on the melodic bed
+   (`music._sidechain`), swung hats and a slapback cowbell. With
+   synthesized music the cuts are
    **beat-aligned** (`analysis.beat_align`): the track's beat grid is exact
    (known bpm, beat at t=0), so segment boundaries are nudged to land on
    beats in output time — no beat detection involved. User-supplied music
@@ -73,8 +80,11 @@ edited clip ready to post (see `docs/IDEAS.md`).
 8. **Render** (`render.render`) — one ffmpeg `filter_complex`: per-segment
    trim/setpts + atempo, concat, optional crop, lanczos scale into
    1080x1920, caption overlay, encode **libx265 main10 crf 18** with
-   `hvc1` tag and **color tags matched to the source** (`render.color_args`:
-   HLG/PQ kept for HDR, bt709 for SDR — never hardcode HLG). `+faststart`.
+   `hvc1` tag, `render.encoder_params` (**aq-mode=3** — bits flow to the
+   dark regions terminal footage lives in; screen content also relaxes
+   the deblocker to keep text edges) and **color tags matched to the
+   source** (`render.color_args`: HLG/PQ kept for HDR, bt709 for SDR —
+   never hardcode HLG). `+faststart`.
 
 ## Conventions and constraints
 

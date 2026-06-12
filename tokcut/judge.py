@@ -276,6 +276,10 @@ Available settings:
   "yellow" (black on yellow), "black" (white on black)
 - hook: cold-open teaser of the best beat (true/false)
 - crop: auto-zoom into the action, dropping static margins (true/false)
+- zoom: framing dial, a number — 1.0 = auto framing; higher zooms
+  tighter into the action, lower pulls wider. Adjust in steps of about
+  0.15-0.3 from the current value ("closer"/"tighter"/"can't read it"
+  goes up, "wider"/"too cropped"/"show more" goes down; range 0.5-2.5)
 - look: finishing color grade — contrast/saturation pop, crisper text
   (true/false; "too saturated"/"flat colors" feedback maps here)
 - keep_audio: keep the original ambient sound (default is muted)
@@ -284,7 +288,7 @@ Available settings:
 Reply with ONLY a JSON object, null for anything that should not change:
 {{"caption": null, "regenerate_caption": false, "target": null,
  "caption_pos": null, "style": null, "hook": null, "crop": null,
- "look": null, "keep_audio": null, "music": null,
+ "zoom": null, "look": null, "keep_audio": null, "music": null,
  "reply": "<one short line telling the creator what you'll change>"}}
 
 Change only what the feedback implies — when in doubt, change less.

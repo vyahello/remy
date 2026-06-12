@@ -53,6 +53,17 @@ def look_filter(src: SourceInfo, screen: bool) -> str:
     return "eq=contrast=1.06:brightness=0.015:saturation=1.18"
 
 
+def encoder_params(screen: bool) -> str:
+    """x265 tuning for the content type.
+
+    aq-mode=3 biases bits toward dark regions — exactly where terminal
+    footage and dark-room desk shots live (the x265 default starves
+    them). Screen content also relaxes the deblocker so text edges
+    aren't smoothed away.
+    """
+    return "aq-mode=3:deblock=-1,-1" if screen else "aq-mode=3"
+
+
 def build_filtergraph(
     segs: list[SpeedSegment],
     src: SourceInfo,
@@ -137,6 +148,11 @@ def build_filtergraph(
         audio_out = "[aout]"
     elif ambient:
         audio_out = ambient
+    if audio_out:
+        # TikTok normalizes to ~-14 LUFS; delivering at that loudness
+        # means its transcode doesn't pump or crush the mix
+        fc.append(f"{audio_out}loudnorm=I=-14:TP=-1.5:LRA=11[anorm]")
+        audio_out = "[anorm]"
     return ";".join(fc), "[vout]", audio_out
 
 
@@ -172,6 +188,7 @@ def render(
     else:
         cmd += ["-an"]  # muted export — add a TikTok sound in-app
     cmd += ["-c:v", "libx265", "-crf", str(crf), "-preset", preset,
+            "-x265-params", encoder_params(screen=lay is None),
             "-profile:v", "main10", "-tag:v", "hvc1",
             *color_args(src),
             "-movflags", "+faststart", out_path]

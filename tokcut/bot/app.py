@@ -60,6 +60,8 @@ def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("⚡ Shorter", callback_data=TWEAK + "shorter"),
          InlineKeyboardButton("🐢 Longer", callback_data=TWEAK + "longer")],
+        [InlineKeyboardButton("🔎 Tighter", callback_data=TWEAK + "tighter"),
+         InlineKeyboardButton("🔭 Wider", callback_data=TWEAK + "wider")],
         [InlineKeyboardButton(
             "🪝 Cold open " + ("off" if p.hook else "on"),
             callback_data=TWEAK + "hook"),
@@ -129,10 +131,11 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "(ranks better).\n\n"
         "*3. Review the take*\n"
         "✅ *Approve* — done; working files are cleaned up.\n"
-        "🔁 *Redo* — tap a quick tweak (length, hook, zoom, music, "
-        "caption, style) or just type what to change: "
-        "_\"shorter and punchier\", \"caption at the top\", "
-        "\"add phonk music\"_.\n\n"
+        "🔁 *Redo* — tap a quick tweak (length, framing, hook, music, "
+        "caption, style).\n"
+        "💬 Or just *type what to change at any time* — no button "
+        "needed: _\"shorter and punchier\", \"zoom in tighter\", "
+        "\"caption at the top\", \"add phonk music\"_.\n\n"
         "*Commands*\n"
         "/status — render queue, current take, disk\n"
         "/start — short hello\n"
@@ -256,6 +259,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 caption_pos=p.caption_pos,
                 hook=p.hook,
                 crop_enabled=p.crop,
+                zoom=p.zoom,
                 look_enabled=p.look,
                 keep_audio=p.keep_audio,
                 music="__auto__" if p.music_style else None,
@@ -468,8 +472,11 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     msg = update.message
     session = _session(context, msg.chat_id)
-    if session is None or not session.awaiting_feedback:
-        return  # not in a redo conversation — ignore chatter
+    if session is None:
+        await msg.reply_text(
+            "🤷 No clip in progress — send me one (as a file 📎) and "
+            "then just tell me what to change.")
+        return
 
     feedback = msg.text.strip()
     session.awaiting_feedback = False
@@ -487,12 +494,12 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as exc:  # noqa: BLE001 — fall back below
             log.warning("feedback interpretation failed: %s", exc)
     if not raw:
-        raw = fallback_updates(feedback, session.params.target)
+        raw = fallback_updates(feedback, session.params)
         if not raw:
             await msg.reply_text(
                 "😅 I couldn't turn that into a setting (and Claude is "
-                "offline). Try “shorter” or “longer”, or rephrase it.")
-            session.awaiting_feedback = True
+                "offline). Try “shorter”, “longer”, “tighter” or "
+                "“wider”, or rephrase it.")
             return
 
     await _apply_and_render(msg, context, session, raw, reply_note)
@@ -524,9 +531,14 @@ async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
 
     changes = apply_updates(session, updates)
     if not changes:
-        await msg.reply_text(
-            "🤷 That didn't change anything — tap Redo and try different "
-            "wording.")
+        if updates:
+            await msg.reply_text(
+                "🤝 It's already set that way — the take wouldn't "
+                "change. Tell me something else to adjust.")
+        else:
+            await msg.reply_text(
+                "🤷 I couldn't map that onto an editor setting — try "
+                "different wording.")
         return
 
     note = f"{reply_note}\n" if reply_note else ""

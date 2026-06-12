@@ -48,7 +48,7 @@ def test_filtergraph_muted_by_default():
 def test_filtergraph_keep_audio_retains_ambient():
     segs = [(0, 5, 1.0)]
     fc, v, a = R.build_filtergraph(segs, SRC, LAY, 60, keep_audio=True)
-    assert a == "[amb]"
+    assert a == "[anorm]"  # ambient, loudness-normalized
     assert "concat=n=1:v=1:a=1" in fc
 
 
@@ -56,7 +56,7 @@ def test_filtergraph_music_adds_amix():
     segs = [(0, 5, 1.0)]
     fc, v, a = R.build_filtergraph(segs, SRC, LAY, 60, with_music=True)
     assert "amix=inputs=2" in fc
-    assert a == "[aout]"
+    assert a == "[anorm]"
 
 
 def test_filtergraph_no_audio_source():
@@ -71,7 +71,7 @@ def test_filtergraph_music_no_audio_source_uses_music_only():
     segs = [(0, 5, 1.0)]
     src = dict(SRC, audio=False)
     fc, v, a = R.build_filtergraph(segs, src, LAY, 60, with_music=True)
-    assert a == "[aout]"
+    assert a == "[anorm]"
     assert "[2:a]volume=0.8[aout]" in fc
 
 
@@ -90,7 +90,7 @@ def test_filtergraph_landscape_music_index():
     segs = [(0, 5, 1.0), (5, 10, 2.0)]
     fc, _v, a = R.build_filtergraph(segs, SRC, None, 60, with_music=True)
     assert "[2:a]volume" in fc
-    assert a == "[aout]"
+    assert a == "[anorm]"
 
 
 def test_filtergraph_vertical_music_index_unchanged():
@@ -133,3 +133,22 @@ def test_filtergraph_no_look_by_default():
     segs = [(0, 5, 1.0)]
     fc, _v, _a = R.build_filtergraph(segs, SRC, None, 60)
     assert "eq=" not in fc
+
+
+def test_encoder_params_by_content():
+    assert R.encoder_params(screen=True) == "aq-mode=3:deblock=-1,-1"
+    assert R.encoder_params(screen=False) == "aq-mode=3"
+
+
+def test_filtergraph_loudnorm_when_audio_kept():
+    segs = [(0, 5, 1.0)]
+    fc, _v, a = R.build_filtergraph(segs, SRC, LAY, 60, keep_audio=True)
+    assert a == "[anorm]"
+    assert "loudnorm=I=-14" in fc
+
+
+def test_filtergraph_no_loudnorm_when_muted():
+    segs = [(0, 5, 1.0)]
+    fc, _v, a = R.build_filtergraph(segs, SRC, LAY, 60)
+    assert a is None
+    assert "loudnorm" not in fc

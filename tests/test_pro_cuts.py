@@ -368,3 +368,32 @@ def test_window_crop_never_slices_a_second_window():
     crop = A.window_crop(frames.astype(np.float32), src)
     # either no crop, or one that keeps the left (browser) half
     assert crop is None or crop[0] < 1920 * 0.1
+
+
+def test_zoom_crop_tighter_shrinks_around_center():
+    src = {"w": 1920, "h": 1080}
+    box = A.zoom_crop((400, 200, 1000, 600), src, 1.25)
+    assert box is not None
+    x, y, w, h = box
+    assert w < 1000 and h < 600
+    assert abs((x + w / 2) - 900) <= 4   # center preserved
+    assert abs((y + h / 2) - 500) <= 4
+    assert w % 2 == 0 and h % 2 == 0
+
+
+def test_zoom_crop_punches_into_full_frame():
+    src = {"w": 1920, "h": 1080}
+    box = A.zoom_crop(None, src, 1.3)
+    assert box is not None and box[2] < 1920 and box[3] < 1080
+
+
+def test_zoom_crop_wider_clamps_to_frame():
+    src = {"w": 1920, "h": 1080}
+    # pulling wider than the frame allows = honest no-crop
+    assert A.zoom_crop((400, 200, 1000, 600), src, 0.5) is None
+
+
+def test_zoom_crop_neutral_is_passthrough():
+    src = {"w": 1920, "h": 1080}
+    assert A.zoom_crop(None, src, 1.0) is None
+    assert A.zoom_crop((10, 10, 200, 200), src, 1.0) == (10, 10, 200, 200)

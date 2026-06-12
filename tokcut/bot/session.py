@@ -15,6 +15,8 @@ from ..caption import DEFAULT_STYLE, STYLES
 VALID_CAPTION_POS = ("auto", "top", "bottom")
 VALID_MUSIC = ("synthwave", "phonk", "off")
 MIN_TARGET, MAX_TARGET = 10.0, 120.0
+MIN_ZOOM, MAX_ZOOM = 0.5, 2.5
+ZOOM_STEP = 1.15  # one tap of Tighter/Wider
 
 
 @dataclass
@@ -24,6 +26,7 @@ class EditParams:
     caption_pos: str = "auto"
     hook: bool = True
     crop: bool = True
+    zoom: float = 1.0  # framing dial on top of the auto-zoom
     look: bool = True  # finishing grade (contrast/saturation pop)
     keep_audio: bool = False
     music_style: str | None = None  # None = muted export
@@ -48,8 +51,8 @@ class EditSession:
         target = "auto" if p.target is None else f"{p.target:.0f}s"
         return (f'caption="{self.caption}" target={target} '
                 f"style={p.style} caption_pos={p.caption_pos} "
-                f"hook={p.hook} crop={p.crop} audio="
-                f"{'ambient' if p.keep_audio else music}")
+                f"hook={p.hook} crop={p.crop} zoom={p.zoom:.2f} "
+                f"audio={'ambient' if p.keep_audio else music}")
 
 
 def cleanup_files(session: EditSession) -> tuple[int, int]:
@@ -89,6 +92,10 @@ def validate_updates(raw: dict) -> dict:
     target = raw.get("target")
     if isinstance(target, (int, float)) and not isinstance(target, bool):
         out["target"] = min(MAX_TARGET, max(MIN_TARGET, float(target)))
+
+    zoom = raw.get("zoom")
+    if isinstance(zoom, (int, float)) and not isinstance(zoom, bool):
+        out["zoom"] = round(min(MAX_ZOOM, max(MIN_ZOOM, float(zoom))), 3)
 
     pos = raw.get("caption_pos")
     if isinstance(pos, str) and pos in VALID_CAPTION_POS:
@@ -131,6 +138,10 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     if "style" in updates and updates["style"] != p.style:
         p.style = updates["style"]
         changes.append(f"caption style → {p.style}")
+    if "zoom" in updates and updates["zoom"] != p.zoom:
+        direction = "tighter" if updates["zoom"] > p.zoom else "wider"
+        p.zoom = updates["zoom"]
+        changes.append(f"framing → {p.zoom:.2f}x ({direction})")
     for key, label in (("hook", "hook"), ("crop", "auto-zoom"),
                        ("look", "color grade"),
                        ("keep_audio", "ambient audio")):
@@ -158,6 +169,10 @@ def tweak_updates(key: str, params: EditParams) -> dict:
         return {"hook": not params.hook}
     if key == "crop":
         return {"crop": not params.crop}
+    if key == "tighter":
+        return {"zoom": params.zoom * ZOOM_STEP}
+    if key == "wider":
+        return {"zoom": params.zoom / ZOOM_STEP}
     if key == "look":
         return {"look": not params.look}
     if key in ("phonk", "synthwave"):
@@ -173,13 +188,17 @@ def tweak_updates(key: str, params: EditParams) -> dict:
     return {}
 
 
-def fallback_updates(feedback: str,
-                     current_target: float | None) -> dict:
+def fallback_updates(feedback: str, params: EditParams) -> dict:
     """Tiny deterministic interpretation when Claude is unavailable."""
-    base = current_target if current_target is not None else AUTO_SWEET
+    base = params.target if params.target is not None else AUTO_SWEET
     low = feedback.lower()
     if "short" in low:
         return {"target": base * 0.8}
     if "long" in low:
         return {"target": base * 1.2}
+    if any(w in low for w in ("wider", "zoom out", "too close",
+                              "show more")):
+        return {"zoom": params.zoom / ZOOM_STEP}
+    if any(w in low for w in ("tighter", "zoom in", "closer", "zoom")):
+        return {"zoom": params.zoom * ZOOM_STEP}
     return {}

@@ -124,9 +124,19 @@ def test_cleanup_tolerates_missing_files(tmp_path):
 # ------------------------------------------------------------- fallback
 
 def test_fallback_shorter_longer():
-    assert fallback_updates("make it shorter", 50.0) == {"target": 40.0}
-    assert fallback_updates("a bit longer please", 50.0) == {"target": 60.0}
-    assert fallback_updates("different caption", 50.0) == {}
+    from tokcut.bot.session import EditParams
+    p = EditParams(target=50.0)
+    assert fallback_updates("make it shorter", p) == {"target": 40.0}
+    assert fallback_updates("a bit longer please", p) == {"target": 60.0}
+    assert fallback_updates("different caption", p) == {}
+
+
+def test_fallback_zoom():
+    from tokcut.bot.session import ZOOM_STEP, EditParams
+    p = EditParams()
+    assert fallback_updates("zoom in closer", p) == {"zoom": ZOOM_STEP}
+    assert fallback_updates("too close, show more",
+                            p) == {"zoom": 1.0 / ZOOM_STEP}
 
 
 # ------------------------------------------------------------- tweaks
@@ -154,6 +164,31 @@ def test_tweak_updates_toggles_and_music():
     assert tweak_updates("nomusic", p) == {"music": "off"}
 
 
+def test_tweak_updates_zoom_dial():
+    from tokcut.bot.session import ZOOM_STEP, EditParams, tweak_updates
+    p = EditParams()
+    assert tweak_updates("tighter", p) == {"zoom": ZOOM_STEP}
+    assert tweak_updates("wider", p) == {"zoom": 1.0 / ZOOM_STEP}
+    p.zoom = 2.0
+    assert tweak_updates("tighter", p) == {"zoom": 2.0 * ZOOM_STEP}
+
+
+def test_validate_zoom_clamps():
+    assert validate_updates({"zoom": 1.3}) == {"zoom": 1.3}
+    assert validate_updates({"zoom": 99})["zoom"] == 2.5
+    assert validate_updates({"zoom": 0.1})["zoom"] == 0.5
+    assert validate_updates({"zoom": True}) == {}
+    assert validate_updates({"zoom": "big"}) == {}
+
+
+def test_apply_zoom_describes_direction():
+    s = _session()
+    changes = apply_updates(s, {"zoom": 1.15})
+    assert s.params.zoom == 1.15
+    assert changes == ["framing → 1.15x (tighter)"]
+    assert apply_updates(s, {"zoom": 1.0}) == ["framing → 1.00x (wider)"]
+
+
 def test_tweak_updates_style_cycles():
     from tokcut.bot.session import EditParams, tweak_updates
     from tokcut.caption import STYLES
@@ -172,7 +207,7 @@ def test_tweak_updates_unknown_key():
 def test_tweaks_pass_validation():
     from tokcut.bot.session import EditParams, tweak_updates
     p = EditParams(target=15.0)
-    for key in ("shorter", "longer", "hook", "crop", "phonk",
-                "synthwave", "nomusic", "style", "newcaption"):
+    for key in ("shorter", "longer", "tighter", "wider", "hook", "crop",
+                "phonk", "synthwave", "nomusic", "style", "newcaption"):
         raw = tweak_updates(key, p)
         assert validate_updates(raw), f"{key} produced nothing valid"
