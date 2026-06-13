@@ -152,3 +152,56 @@ def test_filtergraph_no_loudnorm_when_muted():
     fc, _v, a = R.build_filtergraph(segs, SRC, LAY, 60)
     assert a is None
     assert "loudnorm" not in fc
+
+
+def test_render_dispatches_on_segment_count(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(R, "_render_single",
+                        lambda *a: seen.setdefault("path", "single"))
+    monkeypatch.setattr(R, "_render_segmented",
+                        lambda *a: seen.setdefault("path", "segmented"))
+    few = [(0, 1, 1.0)] * R.MAX_CONCAT_INPUTS
+    R.render("in.mp4", few, None, SRC, None, "out.mp4")
+    assert seen["path"] == "single"
+    seen.clear()
+    many = [(0, 1, 1.0)] * (R.MAX_CONCAT_INPUTS + 1)
+    R.render("in.mp4", many, None, SRC, None, "out.mp4")
+    assert seen["path"] == "segmented"
+
+
+def test_mix_and_norm_variants():
+    fc: list[str] = []
+    assert R._mix_and_norm(fc, None, None) is None
+    assert fc == []                       # muted: no audio filters
+    fc = []
+    assert R._mix_and_norm(fc, "[0:a]", None) == "[anorm]"
+    assert any("loudnorm" in x for x in fc)      # ambient only, normalized
+    fc = []
+    assert R._mix_and_norm(fc, None, "[1:a]") == "[anorm]"
+    assert any("volume=0.8[aout]" in x for x in fc)   # music only
+    fc = []
+    assert R._mix_and_norm(fc, "[0:a]", "[1:a]") == "[anorm]"
+    assert any("amix=inputs=2" in x for x in fc)      # ambient + music
+
+
+def test_format_video_parity_single_vs_segment():
+    # the per-segment chain must format identically to the single-pass
+    # one (same crop/scale/caption), just fed a different input label
+    single = R._format_video("[vc]", SRC, LAY, None, "", 60, "[1:v]")
+    segment = R._format_video("[vt]", SRC, LAY, None, "", 60, "[1:v]")
+    assert single.replace("[vc]", "[X]") == segment.replace("[vt]", "[X]")
+
+
+def test_render_single_adds_shortest_with_music(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(R, "_run",
+                        lambda cmd, out: captured.update(cmd=cmd))
+    src = dict(SRC, audio=False)  # music-only: nothing else bounds the loop
+    R._render_single("in.mp4", [(0, 5, 1.0)], None, src, None,
+                     "out.mp4", 18, "ultrafast", "/tmp/m.wav",
+                     False, None, "")
+    assert "-shortest" in captured["cmd"]
+    captured.clear()
+    R._render_single("in.mp4", [(0, 5, 1.0)], None, SRC, None,
+                     "out.mp4", 18, "ultrafast", None, False, None, "")
+    assert "-shortest" not in captured["cmd"]  # no music, no loop to bound

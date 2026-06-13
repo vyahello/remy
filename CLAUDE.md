@@ -93,7 +93,15 @@ edited clip ready to post (see `docs/IDEAS.md`).
    dark regions terminal footage lives in; screen content also relaxes
    the deblocker to keep text edges) and **color tags matched to the
    source** (`render.color_args`: HLG/PQ kept for HDR, bt709 for SDR —
-   never hardcode HLG). `+faststart`.
+   never hardcode HLG). `+faststart`. Up to `render.MAX_CONCAT_INPUTS`
+   (12) segments this is one ffmpeg graph (all segments are simultaneous
+   seek-decoded inputs); past it — long, heavily-cut clips — `render`
+   switches to a **bounded two-pass** (`_render_segmented`): encode each
+   segment alone (one decoder + one encoder at a time, flat memory),
+   then stitch with the concat *demuxer* and layer music + loudnorm.
+   This avoids the N-simultaneous-decoders memory blow-up that OOM'd a
+   small VPS on a 33-segment source. Looped music carries `-shortest`
+   so the mux is bounded to the video.
 
 ## Conventions and constraints
 
