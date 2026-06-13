@@ -9,6 +9,7 @@ redo feedback into setting changes.
 
 import asyncio
 import contextlib
+import html
 import logging
 import os
 
@@ -182,6 +183,31 @@ async def _post_init(app: Application) -> None:
         BotCommand("help", "full guide: formats, captions, redo tweaks"),
         BotCommand("start", "short hello"),
     ])
+
+
+async def _send_caption_ideas(ideas_msg, subject: str,
+                              ideas: list[str]) -> None:
+    """Edit the placeholder into the tap-to-copy caption-ideas message.
+
+    Uses HTML (not Markdown): `<code>` spans are tap-to-copy on mobile,
+    and HTML escaping is well-defined (only & < >) so a caption with
+    `_ * [ ` ` in it can't break the message — the Markdown version did,
+    and the failure was misreported as "Claude couldn't come up with
+    ideas". Falls back to plain text if the formatted send still fails,
+    so the ideas are never lost.
+    """
+    body = (f"👀 Claude saw: {html.escape(subject)}\n\n"
+            "💡 Caption ideas — tap one to copy it:\n"
+            + "\n".join(f"▫️ <code>{html.escape(c)}</code>"
+                        for c in ideas[:3]))
+    try:
+        await ideas_msg.edit_text(body, parse_mode="HTML")
+    except Exception as exc:  # noqa: BLE001 — never lose the ideas to format
+        log.warning("ideas formatting failed, sending plain: %s", exc)
+        plain = (f"👀 Claude saw: {subject}\n\n"
+                 "💡 Caption ideas (copy one):\n"
+                 + "\n".join(f"▫️ {c}" for c in ideas[:3]))
+        await ideas_msg.edit_text(plain)
 
 
 async def _claude_caption(msg, dest: str,
@@ -394,21 +420,18 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if cfg.claude_judge and claude_available():
             ideas_msg = await msg.reply_text(
                 "👀 Claude is drafting caption ideas for you to copy…")
+            ideas: list[str] = []
             try:
                 ideas, subject = await asyncio.to_thread(
                     suggest_captions, dest, src["duration"])
-                # code spans are tap-to-copy on mobile Telegram
-                lines = "\n".join(
-                    f"▫️ `{c.replace('`', '')}`" for c in ideas[:3])
-                await ideas_msg.edit_text(
-                    f"👀 Claude saw: {subject}\n\n"
-                    f"💡 Caption ideas — tap one to copy it:\n{lines}",
-                    parse_mode="Markdown")
-            except Exception as exc:  # noqa: BLE001 — best-effort
+            except Exception as exc:  # noqa: BLE001 — judgment is best-effort
                 log.warning("caption ideas failed: %s", exc)
+            if ideas:
+                await _send_caption_ideas(ideas_msg, subject, ideas)
+            else:
                 await ideas_msg.edit_text(
-                    "😅 Claude couldn't come up with caption ideas — "
-                    "you're on your own for this one.")
+                    "😅 Claude couldn't read this clip — pick your own "
+                    "caption when you post.")
     elif not caption and cfg.claude_judge and claude_available():
         await status.edit_text("👀 Claude is watching your clip to write "
                                "a caption…")
