@@ -33,7 +33,12 @@ from ..judge import (
     suggest_captions,
 )
 from .config import BotConfig, is_allowed, load_config
-from .pipeline import delivery_name, derive_caption, friendly_progress
+from .pipeline import (
+    delivery_name,
+    derive_caption,
+    friendly_progress,
+    sweep_workdir,
+)
 from .session import (
     EditSession,
     apply_updates,
@@ -594,6 +599,12 @@ def main() -> None:
     # running at startup, so clear it
     with contextlib.suppress(OSError):
         os.remove(os.path.join(cfg.workdir, ".rendering"))
+    # restarts orphan the workdir (sessions are in-memory only) — reclaim
+    # it so abandoned originals don't pile up on a small box
+    removed, freed = sweep_workdir(cfg.workdir)
+    if removed:
+        log.info("startup sweep: removed %d orphaned files (%.0f MB)",
+                 removed, freed / 1048576)
     app = build_application(cfg)
     api = (f"local Bot API ({cfg.bot_api_base_url}, ≤2 GB)"
            if cfg.local_mode else "cloud Bot API (≤50 MB)")

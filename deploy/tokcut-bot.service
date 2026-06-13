@@ -33,6 +33,13 @@ CPUWeight=50
 IOWeight=50
 MemoryHigh=60%
 MemoryMax=75%
+# Cap swap for this cgroup. Without it a render that exceeds MemoryMax
+# spills gigabytes into swap and thrashes for 30+ min — making no
+# progress AND starving the host's other services — instead of being
+# killed. With it, an over-budget render OOMs fast and the bot reports
+# a failed take. (A many-segment 1080p60 source can blow the budget;
+# see the render notes about input fan-out.)
+MemorySwapMax=256M
 # hardening
 NoNewPrivileges=true
 PrivateTmp=true

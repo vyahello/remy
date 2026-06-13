@@ -110,14 +110,20 @@ Description=Prune old tokcut media (Bot API cache, stale workdir)
 [Service]
 Type=oneshot
 # the Bot API server re-downloads from Telegram on demand, so pruning
-# its media cache is safe; binlogs at the dir root are NOT touched
-ExecStart=/usr/bin/find /var/lib/telegram-bot-api -mindepth 2 -type f \
+# its media cache is safe; binlogs at the dir root are NOT touched.
+# Leading '-': the cache dirs are container-owned, so find hits
+# permission-denied and exits non-zero — that must NOT abort the
+# service before the workdir prune below (oneshot stops on first
+# ExecStart failure otherwise).
+ExecStart=-/usr/bin/find /var/lib/telegram-bot-api -mindepth 2 -type f \
     \( -path '*/videos/*' -o -path '*/documents/*' -o -path '*/photos/*' \
        -o -path '*/music/*' -o -path '*/animations/*' -o -path '*/temp/*' \) \
     -mmin +1440 -delete
-# unapproved sessions older than 3 days are abandoned
-ExecStart=/usr/bin/find /home/$SVC_USER/.tokcut/work -type f \
-    -mtime +3 -delete
+# unapproved/orphaned sessions: the workdir is working space, not an
+# archive — anything older than a day is abandoned (the bot also sweeps
+# it on startup, so this is just the backstop for a long-lived process)
+ExecStart=-/usr/bin/find /home/$SVC_USER/.tokcut/work -type f \
+    -mmin +1440 -delete
 UNIT
 cat > /etc/systemd/system/tokcut-gc.timer <<'UNIT'
 [Unit]

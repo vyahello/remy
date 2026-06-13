@@ -88,6 +88,37 @@ def friendly_progress(line: str) -> str | None:
     return None  # probe data, segment rows, caption y — log-only
 
 
+def sweep_workdir(workdir: str) -> tuple[int, int]:
+    """Delete leftover working files at startup. Returns (removed, bytes).
+
+    Sessions live only in the running process's memory, so a restart
+    (every deploy) orphans whatever was in the workdir — no Approve or
+    new-clip sweep can ever reclaim it. At startup nothing is rendering,
+    so every regular file here is orphaned and safe to drop. The
+    `.rendering` deploy-drain marker is handled separately by the caller.
+    """
+    removed = 0
+    freed = 0
+    try:
+        entries = os.listdir(workdir)
+    except OSError:
+        return 0, 0
+    for name in entries:
+        if name == ".rendering":
+            continue
+        path = os.path.join(workdir, name)
+        try:
+            if not os.path.isfile(path):
+                continue
+            size = os.path.getsize(path)
+            os.remove(path)
+        except OSError:
+            continue
+        removed += 1
+        freed += size
+    return removed, freed
+
+
 def delivery_name(file_name: str | None, rev: int) -> str:
     """Human filename for a delivered take.
 

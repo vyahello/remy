@@ -159,3 +159,22 @@ def test_delivery_name_falls_back_to_date():
     from tokcut.bot.pipeline import delivery_name
     assert delivery_name("", 1) == (
         f"tokcut_{datetime.date.today():%Y-%m-%d}_take1.mp4")
+
+
+def test_sweep_workdir_removes_files_keeps_marker(tmp_path):
+    from tokcut.bot.pipeline import sweep_workdir
+    (tmp_path / "clip.mp4").write_bytes(b"x" * 100)
+    (tmp_path / "clip_tokcut_r1.mp4").write_bytes(b"y" * 50)
+    (tmp_path / ".rendering").write_text("123")
+    (tmp_path / "subdir").mkdir()
+    removed, freed = sweep_workdir(str(tmp_path))
+    assert removed == 2
+    assert freed == 150
+    assert (tmp_path / ".rendering").exists()   # deploy-drain marker kept
+    assert (tmp_path / "subdir").exists()        # dirs untouched
+    assert not (tmp_path / "clip.mp4").exists()
+
+
+def test_sweep_workdir_missing_dir():
+    from tokcut.bot.pipeline import sweep_workdir
+    assert sweep_workdir("/nonexistent/tokcut/work") == (0, 0)
