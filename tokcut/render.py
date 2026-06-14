@@ -8,11 +8,16 @@ import tempfile
 from .layout import OUT_H, OUT_W
 from .types import Layout, SourceInfo, SpeedSegment
 
-# Above this many segments the single ffmpeg graph opens too many
-# simultaneous seek-decoded inputs (each a full HEVC decoder context) and
-# blows the memory budget on a small box. Past it, render falls back to a
-# bounded two-pass: encode each segment alone, then concat-demux them.
-MAX_CONCAT_INPUTS = 12
+# The single ffmpeg graph opens one live seek-decoder per segment, all at
+# once — each a full HEVC decoder context holding a DPB of reference frames.
+# Peak memory therefore scales with *simultaneous decoders × per-frame decode
+# cost*, not with the segment count alone: a 5-segment 1080x1920 60fps 10-bit
+# HLG clip once livelocked a 3.7 GB VPS into swap (held forever, never
+# OOM-killed). So the switch to the bounded two-pass (one decoder at a time)
+# is driven by a memory *budget* measured in "decoder-equivalents" — one unit
+# = a 1080p30 8-bit decoder — plus a hard ceiling on input count.
+MAX_CONCAT_INPUTS = 12            # hard cap on simultaneous ffmpeg inputs
+SINGLE_PASS_DECODE_BUDGET = 6.0   # decoder-equivalents a small box absorbs
 
 # audio mix levels + the TikTok loudness target, shared by the single- and
 # two-pass paths so they stay identical
@@ -209,6 +214,40 @@ def _x265_args(src: SourceInfo, lay: Layout | None, crf: int,
             "-profile:v", "main10", "-tag:v", "hvc1", *color_args(src)]
 
 
+def decode_weight(src: SourceInfo) -> float:
+    """Per-input decode cost relative to a 1080p30 8-bit baseline.
+
+    A seek-decoded input keeps a whole decoder context resident (a DPB of
+    reference frames); that footprint grows with resolution, frame rate and
+    bit depth. HLG/PQ sources are 10-bit, so their frames cost ~1.6x the
+    bytes of an 8-bit frame. The single-pass graph holds one of these per
+    segment simultaneously, so this weight is what the budget counts.
+    """
+    base = 1920 * 1080 * 30
+    w = src.get("w", 1920) or 1920
+    h = src.get("h", 1080) or 1080
+    fps = max(1.0, src.get("fps", 30.0) or 30.0)
+    weight = (w * h * fps) / base
+    if src.get("transfer", "") in ("arib-std-b67", "smpte2084"):
+        weight *= 1.6  # 10-bit HDR frames are larger than 8-bit
+    return weight
+
+
+def use_two_pass(segs: list[SpeedSegment], src: SourceInfo) -> bool:
+    """Whether to take the bounded two-pass instead of the single graph.
+
+    True past the hard input cap, or when the simultaneous decoders the
+    single-pass graph would open exceed the small-box memory budget. Count
+    alone is not enough: a heavy source (high res / fps / 10-bit) blows the
+    budget at far fewer segments than a light one (the 5-segment 60fps
+    10-bit wedge that livelocked the VPS would have passed a count-only
+    gate).
+    """
+    if len(segs) > MAX_CONCAT_INPUTS:
+        return True
+    return len(segs) * decode_weight(src) > SINGLE_PASS_DECODE_BUDGET
+
+
 def render(
     path: str,
     segs: list[SpeedSegment],
@@ -223,9 +262,10 @@ def render(
     crop: tuple[int, int, int, int] | None = None,
     look: str = "",
 ) -> str:
-    """Encode the edit. Picks the single-pass graph for a normal segment
-    count, or the bounded two-pass for long, heavily-cut clips."""
-    if len(segs) > MAX_CONCAT_INPUTS:
+    """Encode the edit. Picks the single-pass graph when its simultaneous
+    decoders fit the memory budget, else the bounded two-pass (one decoder
+    at a time) for heavy or heavily-cut clips — see `use_two_pass`."""
+    if use_two_pass(segs, src):
         return _render_segmented(
             path, segs, caption_png, src, lay, out_path, crf, preset,
             music_path, keep_audio, crop, look)
@@ -242,8 +282,8 @@ def _render_single(
 ) -> str:
     """One ffmpeg graph: every segment a seek-decoded input, concat, encode.
 
-    Fast and simple, but every input is a live decoder — only used up to
-    MAX_CONCAT_INPUTS segments (see `render`).
+    Fast and simple, but every input is a live decoder — only used when
+    those simultaneous decoders fit the memory budget (see `use_two_pass`).
     """
     fps = min(60, round(src["fps"]))
     fc, vlabel, alabel = build_filtergraph(

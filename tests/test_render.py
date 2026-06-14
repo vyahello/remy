@@ -154,19 +154,38 @@ def test_filtergraph_no_loudnorm_when_muted():
     assert "loudnorm" not in fc
 
 
-def test_render_dispatches_on_segment_count(monkeypatch):
+LIGHT = {"w": 640, "h": 360, "fps": 30, "audio": True}   # SDR, cheap to decode
+HLG = {"w": 1080, "h": 1920, "fps": 60, "transfer": "arib-std-b67",
+       "audio": True}                                    # iPhone 60fps 10-bit
+
+
+def test_decode_weight_scales_with_source():
+    base = {"w": 1920, "h": 1080, "fps": 30}
+    assert abs(R.decode_weight(base) - 1.0) < 1e-6
+    assert abs(R.decode_weight(dict(base, fps=60)) - 2.0) < 1e-6   # fps x2
+    assert R.decode_weight(dict(base, transfer="arib-std-b67")) > 1.5  # 10bit
+    assert R.decode_weight({}) > 0                                 # tolerant
+
+
+def test_use_two_pass_thresholds():
+    assert not R.use_two_pass([(0, 1, 1.0)] * 5, LIGHT)   # light: in budget
+    assert R.use_two_pass([(0, 1, 1.0)] * 5, HLG)         # heavy: over budget
+    assert not R.use_two_pass([(0, 1, 1.0)], HLG)         # one heavy: fine
+    # the hard input cap forces two-pass even for a light source
+    assert R.use_two_pass([(0, 1, 1.0)] * (R.MAX_CONCAT_INPUTS + 1), LIGHT)
+
+
+def test_render_dispatches_on_decode_budget(monkeypatch):
     seen = {}
     monkeypatch.setattr(R, "_render_single",
                         lambda *a: seen.setdefault("path", "single"))
     monkeypatch.setattr(R, "_render_segmented",
                         lambda *a: seen.setdefault("path", "segmented"))
-    few = [(0, 1, 1.0)] * R.MAX_CONCAT_INPUTS
-    R.render("in.mp4", few, None, SRC, None, "out.mp4")
-    assert seen["path"] == "single"
+    R.render("in.mp4", [(0, 1, 1.0)] * 5, None, LIGHT, None, "out.mp4")
+    assert seen["path"] == "single"        # light source within budget
     seen.clear()
-    many = [(0, 1, 1.0)] * (R.MAX_CONCAT_INPUTS + 1)
-    R.render("in.mp4", many, None, SRC, None, "out.mp4")
-    assert seen["path"] == "segmented"
+    R.render("in.mp4", [(0, 1, 1.0)] * 5, None, HLG, None, "out.mp4")
+    assert seen["path"] == "segmented"     # heavy 60fps 10-bit blows budget
 
 
 def test_mix_and_norm_variants():

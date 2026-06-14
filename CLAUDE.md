@@ -99,15 +99,21 @@ edited clip ready to post (see `docs/IDEAS.md`).
    dark regions terminal footage lives in; screen content also relaxes
    the deblocker to keep text edges) and **color tags matched to the
    source** (`render.color_args`: HLG/PQ kept for HDR, bt709 for SDR —
-   never hardcode HLG). `+faststart`. Up to `render.MAX_CONCAT_INPUTS`
-   (12) segments this is one ffmpeg graph (all segments are simultaneous
-   seek-decoded inputs); past it — long, heavily-cut clips — `render`
-   switches to a **bounded two-pass** (`_render_segmented`): encode each
-   segment alone (one decoder + one encoder at a time, flat memory),
-   then stitch with the concat *demuxer* and layer music + loudnorm.
-   This avoids the N-simultaneous-decoders memory blow-up that OOM'd a
-   small VPS on a 33-segment source. Looped music carries `-shortest`
-   so the mux is bounded to the video.
+   never hardcode HLG). `+faststart`. The single-pass graph makes every
+   segment a simultaneous seek-decoded input, so peak memory scales with
+   *decoders × per-frame decode cost* — not segment count alone.
+   `render.use_two_pass` gates the choice on a **decode budget**
+   (`render.decode_weight`: pixels×fps×bit-depth relative to a 1080p30
+   baseline, ×1.6 for 10-bit HLG/PQ; budget `SINGLE_PASS_DECODE_BUDGET`)
+   plus a hard `MAX_CONCAT_INPUTS` (12) cap. A heavy iPhone clip
+   (1080×1920 60fps 10-bit ≈ 3.2 units each) crosses the budget at a
+   couple of segments and takes the **bounded two-pass**
+   (`_render_segmented`): encode each segment alone (one decoder + one
+   encoder at a time, flat memory), then stitch with the concat *demuxer*
+   and layer music + loudnorm. This avoids the N-simultaneous-decoders
+   memory blow-up — a 5-segment 60fps 10-bit clip once livelocked a 3.7 GB
+   VPS into swap (held the render lock for 24 h, never OOM-killed). Looped
+   music carries `-shortest` so the mux is bounded to the video.
 
 ## Conventions and constraints
 
