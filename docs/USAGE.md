@@ -24,6 +24,9 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 | `--hook` / `--no-hook` | on | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. The single biggest retention lever. |
 | `--crop` / `--no-crop` | on | Auto-zoom into the motion-energy bounding box, dropping static margins (desktop wallpaper, window chrome). Only crops when it gains ≥10% — otherwise leaves the frame alone. |
 | `--zoom F` | 1.0 | Framing dial on top of the auto-zoom: `1.2` punches in tighter around the same center, `0.8` pulls wider. Works even with `--no-crop` (a deliberate centered punch-in). |
+| `--hook-card` / `--no-hook-card` | off | Animated text card over the opening 1.6s (vertical only). See [Hook card](#hook-card). |
+| `--hook-card-text` | caption | Override the hook card text (defaults to the caption). |
+| `--hook-card-pushin` / `--no-hook-card-pushin` | off | Also ease the footage in under the card while it's visible. |
 | `--keep-audio` | off | Keep the original ambient audio. **By default the export is muted** (no audio track) so you add a TikTok sound in-app. |
 | `--music [FILE]` | off | Bake in music (implies sound). Bare flag synthesizes a royalty-free track; pass a path to use your own audio. For off-platform posts. |
 | `--music-style` | synthwave | `synthwave` or `phonk` (the darker, heavier one). |
@@ -31,6 +34,39 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 | `--crf N` | 18 | x265 quality (lower = better/bigger). 18 is visually lossless for screen content. |
 | `--preset P` | medium | x265 preset. Use `fast` if you're in a hurry, `slow` for max quality. |
 | `--dry-run` | off | Print the edit decision list (segments + speeds) and exit — no encode. |
+
+## Hook card
+
+`--hook-card` bakes an **animated text card over the opening 1.6s** — the
+single most-watched moment — to give scrollers an explicit reason to stay.
+It's a faceless-content retention lever: a bold, motion-rendered promise in
+the first frames, not just raw footage.
+
+```bash
+# reuse the caption text as the card
+tokcut clip.MOV -c "How I set this up ⚡" --hook-card
+# different words on the card than the persistent caption
+tokcut clip.MOV -c "btop — terminal system monitor" \
+  --hook-card --hook-card-text "I replaced my system monitor"
+```
+
+How it behaves:
+
+- **Vertical only.** Landscape exports carry no baked text (you overlay your
+  own), so the card is silently skipped there.
+- **Text** defaults to the caption; `--hook-card-text` overrides it. It's
+  rendered with the same styled boxes + color emoji as the caption (just
+  bigger), and auto-shrinks the font if a long line would overflow.
+- **Motion:** fades in over 0.3s with a subtle 0.92→1.0 scale ramp, holds,
+  then fades out — on a dimmed backing box so it reads against busy footage.
+- **One text block at a time:** the persistent caption is held back until the
+  card fades, so the first second isn't cluttered. Caption then runs as usual.
+- **Adds zero length** — it overlays the existing cold-open, so it doesn't
+  fight your completion rate or change the cut timing.
+- `--hook-card-pushin` additionally eases the footage in (a gentle settle)
+  under the card; off by default.
+
+It's **off by default** — add `--hook-card` when you want it.
 
 ## Landscape sources (laptop screen recordings)
 
@@ -127,11 +163,7 @@ DURATION=30 scripts/record_tiktok_screen.sh     # auto-stop after 30 s
 ENCODER=nvenc scripts/record_tiktok_screen.sh   # GPU encode (long sessions)
 ```
 
-Stop with `q`↵ (or Ctrl-C); the file is finalized either way — capture goes
-to a fragmented `*.part.mp4` that stays playable even if the recorder is killed
-mid-session, then is losslessly remuxed into the final faststart MP4 on stop.
-(If a hard crash ever leaves a `*.part.mp4` behind, it's still a valid video —
-just rename it to `.mp4`.) Tune via env
+Stop with `q`↵ (or Ctrl-C); the file is finalized either way. Tune via env
 vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
 `PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
 grab an exact rectangle instead of the auto 9:16 column). It then prints the

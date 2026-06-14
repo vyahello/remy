@@ -29,11 +29,17 @@ from .analysis import (
     window_crop,
     zoom_crop,
 )
-from .caption import DEFAULT_STYLE, STYLES, check_caption, make_caption
-from .layout import compute_layout
+from .caption import (
+    DEFAULT_STYLE,
+    STYLES,
+    check_caption,
+    make_caption,
+    make_hook_card,
+)
+from .layout import compute_layout, hook_card_y
 from .music import STYLE_BPM, generate, write_wav
-from .render import look_filter, render
-from .types import Layout, SourceInfo, SpeedSegment
+from .render import HOOK_CARD_DUR, look_filter, render
+from .types import HookCard, Layout, SourceInfo, SpeedSegment
 
 
 def is_landscape(src: SourceInfo) -> bool:
@@ -78,6 +84,18 @@ def build_parser() -> argparse.ArgumentParser:
                     default=True,
                     help="finishing grade: contrast/saturation pop, "
                          "crisper text on screen recordings (default on)")
+    ap.add_argument("--hook-card", action=argparse.BooleanOptionalAction,
+                    default=False,
+                    help="Animated text card over the opening 1.6s "
+                         "(vertical only, default OFF). Reuses the caption "
+                         "text unless --hook-card-text is given.")
+    ap.add_argument("--hook-card-text", default=None,
+                    help="Override the hook card text (defaults to the "
+                         "caption)")
+    ap.add_argument("--hook-card-pushin",
+                    action=argparse.BooleanOptionalAction, default=False,
+                    help="Also ease the footage in under the card "
+                         "(default off)")
     ap.add_argument("--crop", action=argparse.BooleanOptionalAction,
                     default=True,
                     help="Auto-zoom into the active region, dropping "
@@ -163,6 +181,9 @@ def edit(
     crop_enabled: bool = True,
     zoom: float = 1.0,
     look_enabled: bool = True,
+    hook_card: bool = False,
+    hook_card_text: str | None = None,
+    hook_card_pushin: bool = False,
     keep_audio: bool = False,
     music: str | None = None,
     music_style: str = "synthwave",
@@ -226,6 +247,11 @@ def edit(
             tag = f"FAST  {sp:.2f}x"
         lines.append(f"  {s:7.2f} - {e:7.2f}  {tag}")
     notify("\n".join(lines))
+    card_text = (hook_card_text or caption).strip()
+    use_card = hook_card and not landscape
+    if use_card:
+        notify(f'hook card: "{card_text}" '
+               f"(0.0–{HOOK_CARD_DUR}s, fade-in/out)")
     if dry_run:
         return out
 
@@ -257,6 +283,15 @@ def edit(
             lay = compute_layout(lay_src, cap_size, caption_pos, sal)
             notify(f"caption at y={lay['cap_y']} ({caption_pos})")
 
+        hcard: HookCard | None = None
+        hcard_png: str | None = None
+        if use_card and lay is not None:
+            hcard_png = os.path.join(tmp, "hookcard.png")
+            cw, ch = make_hook_card(card_text, hcard_png, style=style)
+            hcard = {"w": cw, "h": ch, "y": hook_card_y(),
+                     "pushin": hook_card_pushin}
+            notify(f"hook card: baked over the opening ({cw}x{ch})")
+
         music_path: str | None = None
         if music == "__auto__":
             music_path = os.path.join(tmp, "music.wav")
@@ -278,7 +313,8 @@ def edit(
 
         notify("rendering…")
         render(input_path, segs, cap_png, src, lay, out,
-               crf, preset, music_path, keep_audio, crop=crop, look=look)
+               crf, preset, music_path, keep_audio, crop=crop, look=look,
+               hook_card=hcard, hook_card_png=hcard_png)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
@@ -303,6 +339,9 @@ def main(argv: list[str] | None = None) -> int:
             crop_enabled=args.crop,
             zoom=args.zoom,
             look_enabled=args.look,
+            hook_card=args.hook_card,
+            hook_card_text=args.hook_card_text,
+            hook_card_pushin=args.hook_card_pushin,
             keep_audio=args.keep_audio,
             music=args.music,
             music_style=args.music_style,

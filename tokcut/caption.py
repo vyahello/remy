@@ -38,6 +38,12 @@ RISKY_TERMS: dict[str, str | None] = {
 
 MAX_CAPTION_CHARS = 48
 
+# Animated hook card: a bigger version of the caption rendered for the
+# cold open. Fonts are tried largest-first so a long caption still fits
+# the canvas width (HOOK_CARD_MAX_W ≈ 0.92 * 1080).
+HOOK_CARD_FONTS = [78, 70, 62, 54]
+HOOK_CARD_MAX_W = 994
+
 
 def check_caption(text: str) -> list[str]:
     """Warn about terms likely to get the post flagged. Returns warnings."""
@@ -157,3 +163,21 @@ def make_caption(
 
     img.save(out_path)
     return canvas_w, canvas_h
+
+
+def make_hook_card(
+    text: str, out_path: str, style: str = DEFAULT_STYLE,
+    max_w: int = HOOK_CARD_MAX_W,
+) -> tuple[int, int]:
+    """Render the cold-open hook card PNG — a bigger caption.
+
+    Thin wrapper over make_caption (same color-emoji + RGBA path), trying
+    descending font sizes so a long line still fits within `max_w`.
+    Returns (width, height) of the saved PNG.
+    """
+    w = h = 0
+    for size in HOOK_CARD_FONTS:
+        w, h = make_caption(text, out_path, font_size=size, style=style)
+        if w <= max_w:
+            break
+    return w, h

@@ -26,6 +26,20 @@ class Layout(TypedDict):
     cap_y: int
 
 
+class HookCard(TypedDict):
+    """Animated cold-open text card overlaid on the opening (vertical only).
+
+    `w`/`h` are the rendered PNG size at full (1.0x) scale; `y` is the
+    top-of-frame overlay position; `pushin` also eases the footage in
+    under the card while it is visible.
+    """
+
+    w: int
+    h: int
+    y: int
+    pushin: bool
+
+
 # A timeline run: [start_sec, end_sec, tier] where tier is 0/1/2.
 # Stored as a list because to_segments mutates the boundaries in place.
 Segment = list[float]

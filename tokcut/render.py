@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from .layout import OUT_H, OUT_W
-from .types import Layout, SourceInfo, SpeedSegment
+from .types import HookCard, Layout, SourceInfo, SpeedSegment
 
 # The single ffmpeg graph opens one live seek-decoder per segment, all at
 # once — each a full HEVC decoder context holding a DPB of reference frames.
@@ -25,6 +25,16 @@ MUSIC_VOL = 0.8
 AMBIENT_VOL = 1.4
 AMIX = "amix=inputs=2:duration=first:normalize=0:dropout_transition=0"
 LOUDNORM = "loudnorm=I=-14:TP=-1.5:LRA=11"
+
+# Animated hook card (vertical only, opt-in): a bigger caption that fades
+# in/out over the opening with a small scale ramp, on a dimmed backing so
+# it reads against busy footage. Timed in *output* seconds, so in the
+# single-pass graph it rides the concatenated stream and in the two-pass
+# graph it is applied only to the first segment.
+HOOK_CARD_DUR = 1.6      # seconds the card is on screen
+HOOK_CARD_FADE = 0.3     # alpha fade-in / fade-out (also the scale ramp)
+HOOK_CARD_DIM = 0.35     # darkness of the legibility backing box
+HOOK_CARD_SCALE0 = 0.92  # card scale at t=0, ramping to 1.0 over the fade-in
 
 
 def atempo_chain(speed: float) -> str:
@@ -84,16 +94,61 @@ def encoder_params(screen: bool) -> str:
     return "aq-mode=3:deblock=-1,-1" if screen else "aq-mode=3"
 
 
+def _hook_card_chain(cap_label: str, card_label: str,
+                     lay: Layout, card: HookCard) -> str:
+    """The post-`[base]` chain when an animated hook card is overlaid.
+
+    Consumes `[base]`, produces `[vout]`: optional footage push-in, the
+    card stream (alpha fade in/out + a 0.92→1.0 scale ramp, alpha-safe so
+    the rounded box stays transparent), a dimmed backing box, the card
+    overlay (recentered as it scales), then the persistent caption — gated
+    to start only after the card fades so just one text block shows in the
+    opening second.
+    """
+    dur, fade = HOOK_CARD_DUR, HOOK_CARD_FADE
+    ramp = f"{HOOK_CARD_SCALE0}+{1.0 - HOOK_CARD_SCALE0:.2f}*min(t/{fade},1)"
+    parts: list[str] = []
+    base = "[base]"
+    if card["pushin"]:
+        z = f"1+0.04*(1-min(t/{dur},1))"  # 1.04 → 1.0 over the card, then 1.0
+        parts.append(f"[base]scale=w='iw*({z})':h='ih*({z})':eval=frame,"
+                     f"crop={OUT_W}:{OUT_H}[pbase]")
+        base = "[pbase]"
+    parts.append(
+        f"{card_label}format=rgba,"
+        f"fade=t=in:st=0:d={fade}:alpha=1,"
+        f"fade=t=out:st={dur - fade:.2f}:d={fade}:alpha=1,"
+        f"scale=w='iw*({ramp})':h='ih*({ramp})':eval=frame[hcard]")
+    cw, ch, cy = card["w"], card["h"], card["y"]
+    pad = 14
+    bx = max(0, (OUT_W - cw) // 2 - pad)
+    by = max(0, cy - pad)
+    bw = min(OUT_W - bx, cw + 2 * pad)
+    parts.append(
+        f"{base}drawbox=x={bx}:y={by}:w={bw}:h={ch + 2 * pad}:"
+        f"color=black@{HOOK_CARD_DIM}:t=fill:enable='lte(t,{dur})'[dim]")
+    parts.append(
+        f"[dim][hcard]overlay=x=(W-w)/2:y={cy}:eval=frame:"
+        f"enable='lte(t,{dur})'[wc]")
+    parts.append(
+        f"[wc]{cap_label}overlay={lay['cap_x']}:{lay['cap_y']}:"
+        f"enable='gt(t,{dur})',format=yuv420p10le[vout]")
+    return ";".join(parts)
+
+
 def _format_video(in_label: str, src: SourceInfo, lay: Layout | None,
                   crop: tuple[int, int, int, int] | None, look: str,
-                  fps: int, cap_label: str) -> str:
+                  fps: int, cap_label: str, card_label: str = "",
+                  card: HookCard | None = None) -> str:
     """Crop → fps → scale → grade → (pad + caption) chain to `[vout]`.
 
     Shared by the single-pass graph (fed the concatenated `[vc]`) and the
     per-segment graph (fed one trimmed segment) so framing/scaling/caption
     placement is bit-for-bit identical either way. `lay=None` is landscape
     (native resolution, no caption); otherwise the video is scaled into
-    the layout box, padded to 1080x1920 and the caption is overlaid.
+    the layout box, padded to 1080x1920 and the caption is overlaid. When
+    `card` is given (vertical only) the animated hook card rides on top of
+    the opening — see `_hook_card_chain`.
     """
     crop_f = f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}," if crop else ""
     look_f = f"{look}," if look else ""
@@ -103,10 +158,12 @@ def _format_video(in_label: str, src: SourceInfo, lay: Layout | None,
                 f"{look_f}format=yuv420p10le[vout]")
     vw, vh, vx, vy = lay["vw"], lay["vh"], lay["vx"], lay["vy"]
     # grade before the pad so black bars stay pure black
-    return (f"{in_label}{crop_f}fps={fps},scale={vw}:{vh}:flags=lanczos,"
-            f"{look_f}pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base];"
-            f"[base]{cap_label}overlay={lay['cap_x']}:{lay['cap_y']},"
-            f"format=yuv420p10le[vout]")
+    base = (f"{in_label}{crop_f}fps={fps},scale={vw}:{vh}:flags=lanczos,"
+            f"{look_f}pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
+    if card is not None and card_label:
+        return base + ";" + _hook_card_chain(cap_label, card_label, lay, card)
+    return (f"{base};[base]{cap_label}overlay="
+            f"{lay['cap_x']}:{lay['cap_y']},format=yuv420p10le[vout]")
 
 
 def _mix_and_norm(fc: list[str], ambient: str | None,
@@ -145,6 +202,7 @@ def build_filtergraph(
     keep_audio: bool = False,
     crop: tuple[int, int, int, int] | None = None,
     look: str = "",
+    hook_card: HookCard | None = None,
 ) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
 
@@ -169,7 +227,11 @@ def build_filtergraph(
     want_ambient = src["audio"] and (with_music or keep_audio)
     n = len(segs)
     cap_idx = n
-    mus_idx = n + 1 if lay is not None else n
+    card_idx = n + 1
+    # input order: segments, caption (vertical), hook card (vertical+card),
+    # then music. mus_idx steps over whichever of those are present.
+    has_card = lay is not None and hook_card is not None
+    mus_idx = n + (1 if lay is not None else 0) + (1 if has_card else 0)
 
     fc: list[str] = []
     vlabels: list[str] = []
@@ -190,8 +252,10 @@ def build_filtergraph(
         fc.append(f"{''.join(vlabels)}concat=n={n}:v=1[vc]")
         ambient = None
 
-    fc.append(_format_video("[vc]", src, lay, crop, look, fps,
-                            f"[{cap_idx}:v]"))
+    fc.append(_format_video(
+        "[vc]", src, lay, crop, look, fps, f"[{cap_idx}:v]",
+        f"[{card_idx}:v]" if has_card else "",
+        hook_card if lay is not None else None))
     audio_out = _mix_and_norm(
         fc, ambient, f"[{mus_idx}:a]" if with_music else None)
     return ";".join(fc), "[vout]", audio_out
@@ -261,6 +325,8 @@ def render(
     keep_audio: bool = False,
     crop: tuple[int, int, int, int] | None = None,
     look: str = "",
+    hook_card: HookCard | None = None,
+    hook_card_png: str | None = None,
 ) -> str:
     """Encode the edit. Picks the single-pass graph when its simultaneous
     decoders fit the memory budget, else the bounded two-pass (one decoder
@@ -268,10 +334,17 @@ def render(
     if use_two_pass(segs, src):
         return _render_segmented(
             path, segs, caption_png, src, lay, out_path, crf, preset,
-            music_path, keep_audio, crop, look)
+            music_path, keep_audio, crop, look, hook_card, hook_card_png)
     return _render_single(
         path, segs, caption_png, src, lay, out_path, crf, preset,
-        music_path, keep_audio, crop, look)
+        music_path, keep_audio, crop, look, hook_card, hook_card_png)
+
+
+def _hook_card_input(fps: int, hook_card_png: str) -> list[str]:
+    """ffmpeg input args for the looped card PNG (gives it a timeline so
+    fade/scale animate; the enable gate hides it past HOOK_CARD_DUR)."""
+    return ["-loop", "1", "-framerate", str(fps), "-t",
+            f"{HOOK_CARD_DUR + 0.2:.2f}", "-i", hook_card_png]
 
 
 def _render_single(
@@ -279,6 +352,7 @@ def _render_single(
     src: SourceInfo, lay: Layout | None, out_path: str, crf: int,
     preset: str, music_path: str | None, keep_audio: bool,
     crop: tuple[int, int, int, int] | None, look: str,
+    hook_card: HookCard | None = None, hook_card_png: str | None = None,
 ) -> str:
     """One ffmpeg graph: every segment a seek-decoded input, concat, encode.
 
@@ -286,15 +360,21 @@ def _render_single(
     those simultaneous decoders fit the memory budget (see `use_two_pass`).
     """
     fps = min(60, round(src["fps"]))
+    has_card = (lay is not None and hook_card is not None
+                and bool(hook_card_png))
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
-        keep_audio=keep_audio, crop=crop, look=look)
+        keep_audio=keep_audio, crop=crop, look=look,
+        hook_card=hook_card if has_card else None)
 
     cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats"]
     for s, e, _sp in segs:
         cmd += ["-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", path]
     if caption_png and lay is not None:
         cmd += ["-i", caption_png]
+    if has_card:
+        assert hook_card_png is not None
+        cmd += _hook_card_input(fps, hook_card_png)
     if music_path:
         cmd += ["-stream_loop", "-1", "-i", music_path]
     cmd += ["-filter_complex", fc, "-map", vlabel]
@@ -318,6 +398,7 @@ def _render_segmented(
     src: SourceInfo, lay: Layout | None, out_path: str, crf: int,
     preset: str, music_path: str | None, keep_audio: bool,
     crop: tuple[int, int, int, int] | None, look: str,
+    hook_card: HookCard | None = None, hook_card_png: str | None = None,
 ) -> str:
     """Bounded two-pass render for long, heavily-cut clips.
 
@@ -326,7 +407,9 @@ def _render_segmented(
     captioned into the final picture. Pass 2 stitches the parts with the
     concat *demuxer* (sequential read, no re-decode of video) and layers in
     the music bed + loudness pass. This avoids the single-pass graph's
-    N-simultaneous-decoders memory blow-up on a small box.
+    N-simultaneous-decoders memory blow-up on a small box. The animated
+    hook card rides only the first segment (output time t=0), so it uses
+    the same `_format_video` card branch as the single-pass path.
     """
     fps = min(60, round(src["fps"]))
     want_ambient = src["audio"] and (bool(music_path) or keep_audio)
@@ -336,13 +419,20 @@ def _render_segmented(
         parts: list[str] = []
         for i, (s, e, sp) in enumerate(segs):
             seg_out = os.path.join(tmp, f"seg{i:04d}.mp4")
+            # the card belongs on the opening only; caption is input [1],
+            # so the card PNG sits at input [2]
+            seg_card = (hook_card if i == 0 and lay is not None
+                        and caption_png and hook_card_png else None)
             fc = (f"[0:v]setpts=(PTS-STARTPTS)/{sp:.4f}[vt];"
-                  + _format_video("[vt]", src, lay, crop, look, fps,
-                                  "[1:v]"))
+                  + _format_video("[vt]", src, lay, crop, look, fps, "[1:v]",
+                                  "[2:v]" if seg_card else "", seg_card))
             cmd = ["ffmpeg", "-y", "-v", "error",
                    "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", path]
             if caption_png and lay is not None:
                 cmd += ["-i", caption_png]
+            if seg_card:
+                assert hook_card_png is not None
+                cmd += _hook_card_input(fps, hook_card_png)
             maps = ["-map", "[vout]"]
             if want_ambient:
                 fc += (f";[0:a]asetpts=PTS-STARTPTS,"

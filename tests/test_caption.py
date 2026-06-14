@@ -63,3 +63,29 @@ def test_make_caption_writes_png(tmp_path):
     assert w > 0 and h > 0
     from PIL import Image
     assert Image.open(out).size == (w, h)
+
+
+@pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
+                    reason="DejaVu font not installed")
+def test_make_hook_card_bigger_and_fits(tmp_path):
+    text = "How I set this up"
+    hook = tmp_path / "hook.png"
+    hw, hh = C.make_hook_card(text, str(hook))
+    assert hook.exists()
+    from PIL import Image
+    assert Image.open(hook).size == (hw, hh)
+    # fits within the canvas-width safety bound
+    assert hw <= C.HOOK_CARD_MAX_W
+    # rendered larger than the default persistent caption
+    cap = tmp_path / "cap.png"
+    _cw, ch = C.make_caption(text, str(cap))
+    assert hh > ch
+
+
+@pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
+                    reason="DejaVu font not installed")
+def test_make_hook_card_long_text_downsizes_to_fit(tmp_path):
+    out = tmp_path / "hook.png"
+    w, _h = C.make_hook_card("How I set up my brand new desk today ⚡",
+                             str(out))
+    assert w <= C.HOOK_CARD_MAX_W

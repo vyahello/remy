@@ -14,6 +14,11 @@ TOP_PAD = 30
 SAFE_TOP, SAFE_BOTTOM = 0.11, 0.78
 
 
+def hook_card_y() -> int:
+    """Top-of-frame y for the animated hook card, inside the safe zone."""
+    return int(SAFE_TOP * OUT_H) + 20
+
+
 def auto_caption_y(
     sal: np.ndarray, lay: Layout, cap_w: int, cap_h: int
 ) -> int:

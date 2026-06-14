@@ -1,3 +1,5 @@
+import numpy as np
+
 from tokcut import render as R
 
 
@@ -209,6 +211,89 @@ def test_format_video_parity_single_vs_segment():
     single = R._format_video("[vc]", SRC, LAY, None, "", 60, "[1:v]")
     segment = R._format_video("[vt]", SRC, LAY, None, "", 60, "[1:v]")
     assert single.replace("[vc]", "[X]") == segment.replace("[vt]", "[X]")
+
+
+CARD = {"w": 600, "h": 220, "y": 230, "pushin": False}
+
+
+def test_filtergraph_hook_card_branch_vertical():
+    segs = [(0, 1.3, 1.0), (1.3, 10, 2.0)]
+    fc, v, _a = R.build_filtergraph(segs, SRC, LAY, 60, hook_card=CARD)
+    assert v == "[vout]"
+    # animated card: alpha fade in + out and the scale ramp
+    assert "fade=t=in:st=0" in fc and "fade=t=out" in fc
+    assert "[hcard]" in fc and "scale=w='iw*(0.92" in fc
+    # the card overlay is gated to the opening window
+    assert f"enable='lte(t,{R.HOOK_CARD_DUR})'" in fc
+    # legibility backing box behind the card
+    assert "drawbox=" in fc
+    # the persistent caption is suppressed until the card fades out
+    assert (f"overlay={LAY['cap_x']}:{LAY['cap_y']}:"
+            f"enable='gt(t,{R.HOOK_CARD_DUR})'" in fc)
+
+
+def test_filtergraph_no_hook_card_by_default():
+    segs = [(0, 5, 1.0)]
+    fc, _v, _a = R.build_filtergraph(segs, SRC, LAY, 60)
+    assert "fade=t=in" not in fc
+    assert "hcard" not in fc and "drawbox" not in fc
+    # caption runs the whole video — not gated
+    assert "enable='gt(t," not in fc
+    assert f"overlay={LAY['cap_x']}:{LAY['cap_y']}," in fc
+
+
+def test_filtergraph_landscape_hook_card_ignored():
+    # landscape carries no baked text — the card must be dropped entirely
+    segs = [(0, 5, 1.0)]
+    fc, _v, _a = R.build_filtergraph(segs, SRC, None, 60, hook_card=CARD)
+    assert "hcard" not in fc and "fade=t=in" not in fc
+    assert "overlay" not in fc
+
+
+def test_filtergraph_hook_card_music_index_after_card():
+    # inputs: seg [0], caption [1], card [2], music [3]
+    segs = [(0, 5, 1.0)]
+    fc, _v, a = R.build_filtergraph(
+        segs, SRC, LAY, 60, hook_card=CARD, with_music=True)
+    assert a == "[anorm]"
+    assert "[3:a]volume" in fc
+
+
+def test_format_video_card_parity_single_vs_segment():
+    # the single-pass concat input and the two-pass per-segment input must
+    # produce an identical card chain (only the source label differs)
+    single = R._format_video("[vc]", SRC, LAY, None, "", 60,
+                             "[1:v]", "[2:v]", CARD)
+    segment = R._format_video("[vt]", SRC, LAY, None, "", 60,
+                              "[1:v]", "[2:v]", CARD)
+    assert single.replace("[vc]", "[X]") == segment.replace("[vt]", "[X]")
+    assert "[hcard]" in single and "enable='lte(t," in single
+
+
+def test_format_video_card_pushin_adds_base_scale():
+    card = dict(CARD, pushin=True)
+    fc = R._format_video("[vc]", SRC, LAY, None, "", 60,
+                         "[1:v]", "[2:v]", card)
+    assert "[pbase]" in fc and "crop=1080:1920" in fc
+
+
+def test_dry_run_prints_hook_card_and_renders_nothing(monkeypatch):
+    from tokcut import cli
+    src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
+           "duration": 20.0, "transfer": ""}
+    monkeypatch.setattr(
+        cli, "plan",
+        lambda *a, **k: (src, [(0, 1.3, 1.0), (1.3, 10, 2.0)], 8.0,
+                         np.zeros((3, 4, 4)), (0.0, 1.3)))
+    called = {"render": False}
+    monkeypatch.setattr(
+        cli, "render",
+        lambda *a, **k: called.__setitem__("render", True))
+    lines: list[str] = []
+    cli.edit("in.mp4", "My caption", hook_card=True, dry_run=True,
+             on_progress=lines.append)
+    assert any('hook card: "My caption"' in ln for ln in lines)
+    assert called["render"] is False
 
 
 def test_render_single_adds_shortest_with_music(monkeypatch):
