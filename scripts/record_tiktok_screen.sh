@@ -83,6 +83,42 @@ esac
 mkdir -p "$OUTDIR"
 out="$OUTDIR/screen_$(date +%Y%m%d_%H%M%S).mp4"
 
+# Record into a *fragmented* MP4 intermediate, not straight to $out. A plain
+# MP4 only becomes playable after a finalize pass at the very end (it writes
+# the moov index, and +faststart then rewrites the whole file to move it to
+# the front). Interrupt that pass — Ctrl-C on a big file, a double Ctrl-C, a
+# crash — and the moov never lands, so no editor can open the result. A
+# fragmented MP4 is written as self-contained ~1s chunks with no trailing
+# moov, so whatever reached disk stays playable no matter how it was stopped.
+# On stop we losslessly remux the chunks into a clean faststart MP4.
+rec="${out%.mp4}.part.mp4"
+
+# hevc needs the hvc1 brand carried onto the remuxed copy; h264 doesn't
+case "$ENCODER" in
+    x265|nvenc) final_tag=(-tag:v hvc1) ;;
+    *)          final_tag=() ;;
+esac
+
+finalize() {
+    trap - EXIT INT TERM
+    [[ -s "$rec" ]] || { echo "nothing was captured." >&2; exit 1; }
+    # -c copy: no re-encode, just rebuild a normal front-loaded moov. Works
+    # even on a partial capture — a trailing half-written fragment is dropped.
+    if ffmpeg -hide_banner -loglevel error -y -i "$rec" \
+            -map 0 -c copy "${final_tag[@]}" -movflags +faststart "$out" \
+            2>/dev/null && [[ -s "$out" ]]; then
+        rm -f "$rec"
+    else
+        # remux failed (capture too short for even one full fragment) — keep
+        # the raw fragmented file; it is itself playable
+        mv -f "$rec" "$out"
+    fi
+    echo
+    echo "✅ saved $out  ($(du -h "$out" | cut -f1))"
+    echo "   edit it:  venv/bin/python3 -m tokcut \"$out\" -c \"Your caption ⚡\" -o edited.mp4"
+}
+trap finalize EXIT
+
 cat <<INFO
 🎬 tokcut screen recorder
    display     : $DISPLAY_ID
@@ -105,11 +141,14 @@ cmd+=(-vf "scale=${OUT_W}:${OUT_H}:flags=lanczos:in_range=full:out_range=tv,\
 setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
       "${venc[@]}"
       -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv
-      -g "$(( FPS * 2 ))" -movflags +faststart -an
-      "$out")
+      -g "$FPS" -movflags +frag_keyframe+empty_moov+default_base_moof -an
+      "$rec")
 
-"${cmd[@]}"
-
-echo
-echo "✅ saved $out  ($(du -h "$out" | cut -f1))"
-echo "   edit it:  venv/bin/python3 -m tokcut \"$out\" -c \"Your caption ⚡\" -o edited.mp4"
+# Let ffmpeg — not the shell — own Ctrl-C: it catches the signal, flushes the
+# current fragment and exits, and the EXIT trap then remuxes $rec into $out.
+# The (non-empty) INT trap keeps the shell from aborting on the same Ctrl-C so
+# the trap is guaranteed to run; `|| true` swallows ffmpeg's interrupt status
+# so `set -e` doesn't skip finalize either.
+trap ':' INT
+"${cmd[@]}" || true
+trap - INT

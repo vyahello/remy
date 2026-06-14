@@ -127,7 +127,11 @@ DURATION=30 scripts/record_tiktok_screen.sh     # auto-stop after 30 s
 ENCODER=nvenc scripts/record_tiktok_screen.sh   # GPU encode (long sessions)
 ```
 
-Stop with `q`↵ (or Ctrl-C); the file is finalized either way. Tune via env
+Stop with `q`↵ (or Ctrl-C); the file is finalized either way — capture goes
+to a fragmented `*.part.mp4` that stays playable even if the recorder is killed
+mid-session, then is losslessly remuxed into the final faststart MP4 on stop.
+(If a hard crash ever leaves a `*.part.mp4` behind, it's still a valid video —
+just rename it to `.mp4`.) Tune via env
 vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
 `PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
 grab an exact rectangle instead of the auto 9:16 column). It then prints the
