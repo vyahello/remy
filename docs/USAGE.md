@@ -112,6 +112,27 @@ about risky terms — heed the warnings:
 - The same applies to the description and hashtags you type when posting:
   keep them descriptive and on-topic rather than sensational.
 
+## Recording a screen clip (local helper)
+
+`scripts/record_tiktok_screen.sh` captures an X11 screen straight into a
+pristine **1080x1920** source ready for tokcut. Your laptop screen is
+landscape, so it grabs the tallest centered **9:16 column** and upscales it
+to 1080x1920 with lanczos — arrange the app you're filming in the middle of
+the screen. Default quality is **visually-lossless 10-bit 4:4:4 H.264**
+(CRF 14), no audio.
+
+```bash
+scripts/record_tiktok_screen.sh                 # record until you press q
+DURATION=30 scripts/record_tiktok_screen.sh     # auto-stop after 30 s
+ENCODER=nvenc scripts/record_tiktok_screen.sh   # GPU encode (long sessions)
+```
+
+Stop with `q`↵ (or Ctrl-C); the file is finalized either way. Tune via env
+vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
+`PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
+grab an exact rectangle instead of the auto 9:16 column). It then prints the
+`tokcut` command to edit the result. X11 only (Wayland: use `wf-recorder`).
+
 ## Quality notes
 
 - Output: 1080x1920, 60 fps, HEVC main10 (`hvc1`), HLG color preserved,
