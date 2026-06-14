@@ -63,8 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("input")
     ap.add_argument("-c", "--caption", default="",
                     help="Persistent caption text (emoji supported). "
-                         "Required for vertical sources; landscape "
-                         "sources never get a caption (overlay your own)")
+                         "Optional — omit it for a clean vertical export "
+                         "with no baked caption; landscape sources never "
+                         "get one (overlay your own)")
     ap.add_argument("-o", "--output", default=None)
     ap.add_argument("--target", type=_parse_target, default="auto",
                     help="Output length: seconds, 'auto' (default — solve "
@@ -77,9 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
                     default="auto",
                     help="auto = place over the calmest region (default)")
     ap.add_argument("--hook", action=argparse.BooleanOptionalAction,
-                    default=True,
+                    default=False,
                     help="Cold-open on the most action-packed beat of the "
-                         "video before the chronological cut (default on)")
+                         "video before the chronological cut (default off)")
     ap.add_argument("--look", action=argparse.BooleanOptionalAction,
                     default=True,
                     help="finishing grade: contrast/saturation pop, "
@@ -177,7 +178,7 @@ def edit(
     target: float | str | None = "auto",
     style: str = DEFAULT_STYLE,
     caption_pos: str = "auto",
-    hook: bool = True,
+    hook: bool = False,
     crop_enabled: bool = True,
     zoom: float = 1.0,
     look_enabled: bool = True,
@@ -209,8 +210,6 @@ def edit(
 
     src, segs, est, frames, hook_win = plan(input_path, target, hook)
     landscape = is_landscape(src)
-    if not landscape and not caption.strip():
-        raise ValueError("a caption is required for vertical output (-c)")
     notify(f"source: {src['w']}x{src['h']}  {src['duration']:.1f}s "
            f"@ {src['fps']:.0f}fps  "
            f"({src.get('transfer') or 'unknown'} transfer)")
@@ -248,7 +247,7 @@ def edit(
         lines.append(f"  {s:7.2f} - {e:7.2f}  {tag}")
     notify("\n".join(lines))
     card_text = (hook_card_text or caption).strip()
-    use_card = hook_card and not landscape
+    use_card = hook_card and not landscape and bool(card_text)
     if use_card:
         notify(f'hook card: "{card_text}" '
                f"(0.0–{HOOK_CARD_DUR}s, fade-in/out)")
@@ -263,9 +262,6 @@ def edit(
             notify("landscape source: native resolution kept, no caption "
                    "(overlay your own)")
         else:
-            cap_png = os.path.join(tmp, "caption.png")
-            cap_size = make_caption(caption, cap_png, style=style)
-
             # layout works on post-crop dimensions; the caption-placement
             # saliency map must describe the same (cropped) picture
             lay_src = src
@@ -278,10 +274,17 @@ def edit(
                 ay1 = max(ay0 + 2, (crop[1] + crop[3]) * ah // src["h"])
                 lay_frames = frames[:, ay0:ay1, ax0:ax1]
                 lay_src = cast(SourceInfo, dict(src, w=crop[2], h=crop[3]))
-            sal = (saliency_map(lay_frames)
-                   if caption_pos == "auto" else None)
-            lay = compute_layout(lay_src, cap_size, caption_pos, sal)
-            notify(f"caption at y={lay['cap_y']} ({caption_pos})")
+            if caption.strip():
+                cap_png = os.path.join(tmp, "caption.png")
+                cap_size = make_caption(caption, cap_png, style=style)
+                sal = (saliency_map(lay_frames)
+                       if caption_pos == "auto" else None)
+                lay = compute_layout(lay_src, cap_size, caption_pos, sal)
+                notify(f"caption at y={lay['cap_y']} ({caption_pos})")
+            else:
+                # clean vertical: center the video, bake no caption
+                lay = compute_layout(lay_src, (0, 0), "top")
+                notify("no caption — centered vertical export")
 
         hcard: HookCard | None = None
         hcard_png: str | None = None

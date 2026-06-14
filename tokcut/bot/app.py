@@ -36,7 +36,6 @@ from ..judge import (
 from .config import BotConfig, is_allowed, load_config
 from .pipeline import (
     delivery_name,
-    derive_caption,
     friendly_progress,
     sweep_workdir,
 )
@@ -54,10 +53,78 @@ log = logging.getLogger("tokcut.bot")
 APPROVE = "approve"
 REDO = "redo"
 TWEAK = "tweak:"
+# setup-phase (pre-render picker) callbacks
+SETCAP = "setcap:"   # pick caption idea i
+OWNCAP = "owncap"    # prompt to type a caption
+NOCAP = "nocap"      # bake no caption
+OPT = "opt:"         # toggle a setup option (reuses tweak_updates keys)
+RENDER = "render"    # leave setup, render the first take
 VERDICT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("✅ Approve", callback_data=APPROVE),
     InlineKeyboardButton("🔁 Redo", callback_data=REDO),
 ]])
+
+
+def _short(text: str, n: int = 26) -> str:
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def setup_text(session: EditSession) -> str:
+    """The pre-render setup summary shown above the picker keyboard."""
+    p = session.params
+    if not session.vertical:
+        cap = "🖥️ landscape — no baked caption (overlay your own)"
+    elif session.caption:
+        cap = f"caption: “{session.caption}”"
+    else:
+        cap = "caption: none"
+    length = "auto" if p.target is None else f"~{p.target:.0f}s"
+    return (
+        "🎬 *Setup* — pick what you want, then tap *Render*.\n"
+        f"{cap}\n"
+        f"cold open {'on' if p.hook else 'off'} · length {length} · "
+        f"zoom {'on' if p.crop else 'off'} · look "
+        f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}")
+
+
+def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
+    """Pre-render picker: caption choice (vertical) + the option toggles.
+
+    Caption ideas pre-selected with ✅; options the user picked before
+    rendering — cold open (default off), length, zoom/look, music.
+    """
+    p = session.params
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if session.vertical:
+        for i, idea in enumerate(session.caption_choices[:3]):
+            mark = "✅ " if session.caption == idea else "💬 "
+            rows.append([InlineKeyboardButton(
+                mark + _short(idea), callback_data=SETCAP + str(i))])
+        own = (session.caption
+               and session.caption not in session.caption_choices)
+        rows.append([
+            InlineKeyboardButton(("✅ " if own else "") + "✍️ Type my own",
+                                 callback_data=OWNCAP),
+            InlineKeyboardButton(("✅ " if not session.caption else "")
+                                 + "🚫 No caption", callback_data=NOCAP)])
+
+    def opt(label: str, key: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(label, callback_data=OPT + key)
+
+    tic = lambda on: " ✅" if on else ""  # noqa: E731
+    toggles = [
+        opt("🪝 Cold open " + ("ON" if p.hook else "off"), "hook"),
+        opt("⚡ Shorter", "shorter"), opt("🐢 Longer", "longer"),
+        opt("🔍 Zoom " + ("on" if p.crop else "off"), "crop"),
+        opt("✨ Look " + ("on" if p.look else "off"), "look"),
+        opt("🥁 Phonk" + tic(p.music_style == "phonk"), "phonk"),
+        opt("🎹 Synth" + tic(p.music_style == "synthwave"), "synthwave"),
+        opt("🔇 No music" + tic(not p.music_style), "nomusic"),
+    ]
+    rows += [toggles[i:i + 2] for i in range(0, len(toggles), 2)]
+    rows.append([InlineKeyboardButton("🎬 Render", callback_data=RENDER)])
+    return InlineKeyboardMarkup(rows)
 
 
 def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
@@ -78,7 +145,7 @@ def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
         btn("🔍 Zoom " + ("off" if p.crop else "on"), "crop"),
         btn("✨ Look " + ("off" if p.look else "on"), "look"),
     ]
-    if session.caption:  # vertical exports only — landscape has no caption
+    if session.vertical:  # vertical exports can carry a caption
         buttons += [btn("✍️ New caption", "newcaption"),
                     btn("🎨 Next style", "style")]
     # music section
@@ -122,24 +189,20 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*1. Send a clip — always as a file* 📎 → File\n"
         "Plain video messages get recompressed by Telegram and the "
         "quality is ruined before I see it.\n\n"
-        "*2. What happens to it*\n"
-        "📱 *Vertical (phone) clips* → 1080x1920, auto length (~30s), "
-        "styled caption placed off the action. Add a message caption "
-        "with the file to pick the wording yourself; otherwise Claude "
-        "watches the clip and writes one.\n"
-        "🖥️ *Landscape (screen recordings)* → native resolution so "
-        "TikTok can go fullscreen, recorder UI trimmed, zoom to the "
-        "action window, *no baked caption* — Claude sends wording ideas "
-        "to copy into TikTok instead.\n"
-        "🔇 Exports are *muted* — add a trending sound in the app "
-        "(ranks better).\n\n"
+        "*2. Set it up*\n"
+        "Claude watches the clip and proposes captions. In the setup "
+        "screen you:\n"
+        "• tap a caption idea, *type your own*, or *🚫 No caption*\n"
+        "• flip the options you want — cold open (off by default), "
+        "length, zoom, look, music\n"
+        "• tap *🎬 Render* when ready.\n"
+        "📱 Vertical → 1080x1920. 🖥️ Landscape → native resolution, no "
+        "baked caption (ideas are sent to copy instead).\n"
+        "🔇 Exports are *muted* — add a trending sound in the app.\n\n"
         "*3. Review the take*\n"
         "✅ *Approve* — done; working files are cleaned up.\n"
-        "🔁 *Redo* — tap a quick tweak (length, framing, hook, music, "
-        "caption, style).\n"
-        "💬 Or just *type what to change at any time* — no button "
-        "needed: _\"shorter and punchier\", \"zoom in tighter\", "
-        "\"caption at the top\", \"add phonk music\"_.\n\n"
+        "🔁 *Redo* — tap a quick tweak or *type what to change*: "
+        "_\"shorter\", \"zoom in tighter\", \"add phonk music\"_.\n\n"
         "*Commands*\n"
         "/status — render queue, current take, disk\n"
         "/start — short hello\n"
@@ -257,8 +320,12 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
     async with _render_guard(cfg.workdir, lock):
         session.revision += 1
         rev = session.revision
-        tag = (f": “{session.caption}”" if session.caption
-               else " (landscape, no caption)")
+        if session.caption:
+            tag = f": “{session.caption}”"
+        elif session.vertical:
+            tag = " (no caption)"
+        else:
+            tag = " (landscape, no caption)"
         status = await msg.reply_text(f"🎞️ Take {rev}, rolling{tag}")
         loop = asyncio.get_running_loop()
         progress: list[str] = []
@@ -325,9 +392,12 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
         size_mb = os.path.getsize(out) / 1048576
         await status.edit_text(
             f"📤 Sending take {rev} your way ({size_mb:.1f} MB)…")
-        doc_caption = (f"🎬 Take {rev} · “{session.caption}”"
-                       if session.caption else
-                       f"🎬 Take {rev} · 🖥️ landscape, add your caption")
+        if session.caption:
+            doc_caption = f"🎬 Take {rev} · “{session.caption}”"
+        elif session.vertical:
+            doc_caption = f"🎬 Take {rev} · no caption (clean export)"
+        else:
+            doc_caption = f"🎬 Take {rev} · 🖥️ landscape, add your caption"
         if not p.music_style and not p.keep_audio:
             doc_caption += "\n🔇 Muted — add a trending sound in TikTok."
         if review_line:
@@ -407,49 +477,39 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "*file*: 📎 → File.",
             parse_mode="Markdown")
 
-    caption = (msg.caption or "").strip()
+    # No auto-render: Claude proposes captions, then the creator picks the
+    # caption + options in a setup screen and taps Render (defaults: no cold
+    # open, no caption).
+    vertical = src["w"] <= src["h"]
+    ideas: list[str] = []
     subject = ""
-    if src["w"] > src["h"]:
-        # landscape: native resolution, no caption (no fullscreen room),
-        # but Claude still proposes wording to copy into TikTok
-        caption = ""
+    if cfg.claude_judge and claude_available():
         await status.edit_text(
-            "🖥️ Landscape clip — keeping the native resolution so it can "
-            "go fullscreen in TikTok. Cuts, speed-ups and edge trims "
-            "only; overlay your own caption when posting.")
-        if cfg.claude_judge and claude_available():
-            ideas_msg = await msg.reply_text(
-                "👀 Claude is drafting caption ideas for you to copy…")
-            ideas: list[str] = []
-            try:
-                ideas, subject = await asyncio.to_thread(
-                    suggest_captions, dest, src["duration"])
-            except Exception as exc:  # noqa: BLE001 — judgment is best-effort
-                log.warning("caption ideas failed: %s", exc)
-            if ideas:
-                await _send_caption_ideas(ideas_msg, subject, ideas)
-            else:
-                await ideas_msg.edit_text(
-                    "😅 Claude couldn't read this clip — pick your own "
-                    "caption when you post.")
-    elif not caption and cfg.claude_judge and claude_available():
-        await status.edit_text("👀 Claude is watching your clip to write "
-                               "a caption…")
-        caption, subject = await _claude_caption(msg, dest)
-        if caption:
-            await status.edit_text(
-                f"👀 Claude saw: {subject}\n✍️ Caption: “{caption}”")
-    if not caption and src["w"] <= src["h"]:
-        caption = derive_caption(msg.caption, file_name)
-    for warning in check_caption(caption) if caption else []:
-        await msg.reply_text(f"⚠️ caption check: {warning}")
+            "👀 Claude is watching your clip for caption ideas…")
+        try:
+            ideas, subject = await asyncio.to_thread(
+                suggest_captions, dest, src["duration"])
+        except Exception as exc:  # noqa: BLE001 — judgment is best-effort
+            log.warning("caption ideas failed: %s", exc)
 
-    session = EditSession(source=dest, file_name=file_name,
-                          caption=caption, subject=subject)
+    session = EditSession(source=dest, file_name=file_name, caption="",
+                          subject=subject, vertical=vertical,
+                          caption_choices=ideas)
     session.params.target = cfg.default_target
+    # a caption typed with the upload pre-selects it (vertical only)
+    upload_caption = (msg.caption or "").strip()
+    if vertical and upload_caption and not check_caption(upload_caption):
+        session.caption = upload_caption
     context.application.bot_data["sessions"][msg.chat_id] = session
 
-    await _render_and_deliver(msg, context, session)
+    saw = f"👀 Claude saw: {subject}\n" if subject else ""
+    await status.edit_text((saw + "Set it up below 👇").strip())
+    if not vertical and ideas:
+        # landscape bakes no caption — offer the ideas as tap-to-copy text
+        await _send_caption_ideas(
+            await msg.reply_text("💡 caption ideas…"), subject, ideas)
+    await msg.reply_text(setup_text(session), parse_mode="Markdown",
+                         reply_markup=setup_keyboard(session))
 
 
 async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -492,6 +552,39 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "🤷 That tweak isn't available here.")
             return
         await _apply_and_render(query.message, context, session, raw)
+    elif query.data.startswith(SETCAP):
+        idx = int(query.data.removeprefix(SETCAP))
+        if 0 <= idx < len(session.caption_choices):
+            cand = session.caption_choices[idx]
+            if check_caption(cand):
+                await query.message.reply_text(
+                    "⚠️ that caption might get flagged — pick another or "
+                    "type your own.")
+            else:
+                session.caption = cand
+                await _refresh_setup(query, session)
+    elif query.data == OWNCAP:
+        await query.message.reply_text(
+            "✍️ Type your caption and send it as a message.")
+    elif query.data == NOCAP:
+        session.caption = ""
+        await _refresh_setup(query, session)
+    elif query.data.startswith(OPT):
+        raw = tweak_updates(query.data.removeprefix(OPT), session.params)
+        apply_updates(session, validate_updates(raw))
+        await _refresh_setup(query, session)
+    elif query.data == RENDER:
+        session.phase = "review"
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _render_and_deliver(query.message, context, session)
+
+
+async def _refresh_setup(query, session: EditSession) -> None:
+    """Re-draw the setup message in place after a caption/option change."""
+    with contextlib.suppress(Exception):  # "message not modified" is fine
+        await query.edit_message_text(
+            setup_text(session), parse_mode="Markdown",
+            reply_markup=setup_keyboard(session))
 
 
 async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -507,6 +600,25 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     feedback = msg.text.strip()
+
+    if session.phase == "setup":
+        # in the setup screen a text message is the caption the creator typed
+        if not session.vertical:
+            await msg.reply_text(
+                "🖥️ Landscape clips bake no caption — set the options and "
+                "tap 🎬 Render.")
+            return
+        bad = check_caption(feedback)
+        for warning in bad:
+            await msg.reply_text(f"⚠️ caption check: {warning}")
+        if bad:
+            return
+        session.caption = feedback
+        await msg.reply_text(
+            f"✍️ caption set: “{feedback}”\nTweak more or tap 🎬 Render.",
+            reply_markup=setup_keyboard(session))
+        return
+
     session.awaiting_feedback = False
     session.history.append(f"feedback: {feedback}")
 

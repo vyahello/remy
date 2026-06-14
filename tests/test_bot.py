@@ -178,3 +178,61 @@ def test_sweep_workdir_removes_files_keeps_marker(tmp_path):
 def test_sweep_workdir_missing_dir():
     from tokcut.bot.pipeline import sweep_workdir
     assert sweep_workdir("/nonexistent/tokcut/work") == (0, 0)
+
+
+# ------------------------------------------------------ setup-phase picker
+
+def _setup_session(vertical: bool, caption: str = "",
+                   choices=("idea one", "idea two")):
+    from tokcut.bot.session import EditSession
+    return EditSession(source="x.mp4", file_name="x.mp4", caption=caption,
+                       vertical=vertical, caption_choices=list(choices))
+
+
+def _datas(kb):
+    return [b.callback_data for row in kb.inline_keyboard for b in row]
+
+
+def test_setup_keyboard_vertical_has_caption_choices_and_render():
+    from tokcut.bot import app
+    kb = app.setup_keyboard(_setup_session(vertical=True))
+    datas = _datas(kb)
+    assert app.SETCAP + "0" in datas and app.SETCAP + "1" in datas
+    assert app.OWNCAP in datas and app.NOCAP in datas
+    assert app.OPT + "hook" in datas and app.RENDER in datas
+    labels = [b.text for row in kb.inline_keyboard for b in row]
+    assert any("Cold open off" in t for t in labels)  # default off
+
+
+def test_setup_keyboard_landscape_has_no_caption_buttons():
+    from tokcut.bot import app
+    kb = app.setup_keyboard(_setup_session(vertical=False))
+    datas = _datas(kb)
+    assert not any(d.startswith(app.SETCAP) for d in datas)
+    assert app.OWNCAP not in datas and app.NOCAP not in datas
+    assert app.RENDER in datas and app.OPT + "hook" in datas
+
+
+def test_setup_keyboard_marks_selected_caption():
+    from tokcut.bot import app
+    kb = app.setup_keyboard(_setup_session(vertical=True, caption="idea one"))
+    first = kb.inline_keyboard[0][0]
+    assert first.callback_data == app.SETCAP + "0" and "✅" in first.text
+
+
+def test_setup_text_reflects_state():
+    from tokcut.bot import app
+    s = _setup_session(vertical=True)
+    assert "caption: none" in app.setup_text(s)
+    assert "cold open off" in app.setup_text(s)
+    s.caption = "my cap"
+    assert "my cap" in app.setup_text(s)
+    assert "no baked caption" in app.setup_text(_setup_session(vertical=False))
+
+
+def test_session_defaults_to_setup_phase_hook_off():
+    from tokcut.bot.session import EditParams, EditSession
+    assert EditParams().hook is False  # cold open opt-in
+    s = EditSession(source="x", file_name="x", caption="")
+    assert s.phase == "setup" and s.vertical is True
+    assert s.caption_choices == []

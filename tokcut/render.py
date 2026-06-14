@@ -130,9 +130,12 @@ def _hook_card_chain(cap_label: str, card_label: str,
     parts.append(
         f"[dim][hcard]overlay=x=(W-w)/2:y={cy}:eval=frame:"
         f"enable='lte(t,{dur})'[wc]")
-    parts.append(
-        f"[wc]{cap_label}overlay={lay['cap_x']}:{lay['cap_y']}:"
-        f"enable='gt(t,{dur})',format=yuv420p10le[vout]")
+    if cap_label:
+        parts.append(
+            f"[wc]{cap_label}overlay={lay['cap_x']}:{lay['cap_y']}:"
+            f"enable='gt(t,{dur})',format=yuv420p10le[vout]")
+    else:
+        parts.append("[wc]format=yuv420p10le[vout]")
     return ";".join(parts)
 
 
@@ -162,8 +165,10 @@ def _format_video(in_label: str, src: SourceInfo, lay: Layout | None,
             f"{look_f}pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
     if card is not None and card_label:
         return base + ";" + _hook_card_chain(cap_label, card_label, lay, card)
-    return (f"{base};[base]{cap_label}overlay="
-            f"{lay['cap_x']}:{lay['cap_y']},format=yuv420p10le[vout]")
+    if cap_label:  # vertical with a baked caption
+        return (f"{base};[base]{cap_label}overlay="
+                f"{lay['cap_x']}:{lay['cap_y']},format=yuv420p10le[vout]")
+    return f"{base};[base]format=yuv420p10le[vout]"  # vertical, no caption
 
 
 def _mix_and_norm(fc: list[str], ambient: str | None,
@@ -203,6 +208,7 @@ def build_filtergraph(
     crop: tuple[int, int, int, int] | None = None,
     look: str = "",
     hook_card: HookCard | None = None,
+    has_caption: bool = True,
 ) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
 
@@ -226,12 +232,20 @@ def build_filtergraph(
     """
     want_ambient = src["audio"] and (with_music or keep_audio)
     n = len(segs)
-    cap_idx = n
-    card_idx = n + 1
-    # input order: segments, caption (vertical), hook card (vertical+card),
-    # then music. mus_idx steps over whichever of those are present.
+    # input order: segments, caption (vertical+caption), hook card
+    # (vertical+card), then music. Each index is only consumed when that
+    # input is actually present, so a vertical clip with no caption skips
+    # the caption slot entirely.
+    cap_present = lay is not None and has_caption
     has_card = lay is not None and hook_card is not None
-    mus_idx = n + (1 if lay is not None else 0) + (1 if has_card else 0)
+    idx = n
+    cap_idx = idx
+    if cap_present:
+        idx += 1
+    card_idx = idx
+    if has_card:
+        idx += 1
+    mus_idx = idx
 
     fc: list[str] = []
     vlabels: list[str] = []
@@ -253,7 +267,8 @@ def build_filtergraph(
         ambient = None
 
     fc.append(_format_video(
-        "[vc]", src, lay, crop, look, fps, f"[{cap_idx}:v]",
+        "[vc]", src, lay, crop, look, fps,
+        f"[{cap_idx}:v]" if cap_present else "",
         f"[{card_idx}:v]" if has_card else "",
         hook_card if lay is not None else None))
     audio_out = _mix_and_norm(
@@ -365,7 +380,8 @@ def _render_single(
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
         keep_audio=keep_audio, crop=crop, look=look,
-        hook_card=hook_card if has_card else None)
+        hook_card=hook_card if has_card else None,
+        has_caption=bool(caption_png) and lay is not None)
 
     cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats"]
     for s, e, _sp in segs:
@@ -419,16 +435,28 @@ def _render_segmented(
         parts: list[str] = []
         for i, (s, e, sp) in enumerate(segs):
             seg_out = os.path.join(tmp, f"seg{i:04d}.mp4")
-            # the card belongs on the opening only; caption is input [1],
-            # so the card PNG sits at input [2]
+            # input [0] is the segment video; the caption (if any) and the
+            # hook card (opening segment only) follow, so their labels shift
+            # when there is no caption to skip.
+            cap_present = bool(caption_png) and lay is not None
             seg_card = (hook_card if i == 0 and lay is not None
-                        and caption_png and hook_card_png else None)
+                        and hook_card_png else None)
+            inp = 1
+            cap_label = ""
+            if cap_present:
+                cap_label = f"[{inp}:v]"
+                inp += 1
+            card_label = ""
+            if seg_card:
+                card_label = f"[{inp}:v]"
+                inp += 1
             fc = (f"[0:v]setpts=(PTS-STARTPTS)/{sp:.4f}[vt];"
-                  + _format_video("[vt]", src, lay, crop, look, fps, "[1:v]",
-                                  "[2:v]" if seg_card else "", seg_card))
+                  + _format_video("[vt]", src, lay, crop, look, fps,
+                                  cap_label, card_label, seg_card))
             cmd = ["ffmpeg", "-y", "-v", "error",
                    "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", path]
-            if caption_png and lay is not None:
+            if cap_present:
+                assert caption_png is not None
                 cmd += ["-i", caption_png]
             if seg_card:
                 assert hook_card_png is not None

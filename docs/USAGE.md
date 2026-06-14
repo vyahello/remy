@@ -16,12 +16,12 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-c / --caption` | — | Persistent caption (required for vertical sources). Emoji supported (⚡🔥🧪💻…). Auto-balanced onto two lines. **Landscape sources never get a caption** — see below. |
+| `-c / --caption` | — | Persistent caption (optional). Emoji supported (⚡🔥🧪💻…). Auto-balanced onto two lines. Omit it for a clean vertical export with no baked caption. **Landscape sources never get a caption** — see below. |
 | `-o / --output` | `<input>_tokcut.mp4` | Output path. |
 | `--target` | `auto` | Output length. `auto` (default) solves a TikTok-friendly length: natural pacing ≤35s is kept, longer compresses toward the ~30s completion-rate sweet spot — floored by the real-time action, which is never sped up. A number solves for ≈ N seconds; `none` keeps base tier speeds (dead 3.2x, lag 1.7x, action 1x). |
 | `--style` | `purple` | Caption look: `purple` (purple bold-italic on white — the house style), `yellow` (black on yellow), `black` (white on black). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region inside the TikTok safe zone, so it never covers the screen/device. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
-| `--hook` / `--no-hook` | on | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. The single biggest retention lever. |
+| `--hook` / `--no-hook` | off | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. Opt-in — add `--hook` to enable. |
 | `--crop` / `--no-crop` | on | Auto-zoom into the motion-energy bounding box, dropping static margins (desktop wallpaper, window chrome). Only crops when it gains ≥10% — otherwise leaves the frame alone. |
 | `--zoom F` | 1.0 | Framing dial on top of the auto-zoom: `1.2` punches in tighter around the same center, `0.8` pulls wider. Works even with `--no-crop` (a deliberate centered punch-in). |
 | `--hook-card` / `--no-hook-card` | off | Animated text card over the opening 1.6s (vertical only). See [Hook card](#hook-card). |
@@ -163,7 +163,11 @@ DURATION=30 scripts/record_tiktok_screen.sh     # auto-stop after 30 s
 ENCODER=nvenc scripts/record_tiktok_screen.sh   # GPU encode (long sessions)
 ```
 
-Stop with `q`↵ (or Ctrl-C); the file is finalized either way. Tune via env
+Stop with `q`↵ (or Ctrl-C); the file is finalized either way — capture goes
+to a fragmented `*.part.mp4` that stays playable even if the recorder is killed
+mid-session, then is losslessly remuxed into the final faststart MP4 on stop.
+(If a hard crash ever leaves a `*.part.mp4` behind, it's still a valid video —
+just rename it to `.mp4`.) Tune via env
 vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
 `PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
 grab an exact rectangle instead of the auto 9:16 column). It then prints the

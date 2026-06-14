@@ -27,7 +27,7 @@ class EditParams:
     target: float | None = None  # None = auto (TikTok-friendly length)
     style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
-    hook: bool = True
+    hook: bool = False  # cold-open teaser — opt-in (default off)
     crop: bool = True
     zoom: float = 1.0  # framing dial on top of the auto-zoom
     look: bool = True  # finishing grade (contrast/saturation pop)
@@ -48,6 +48,9 @@ class EditSession:
     file_name: str         # original Telegram file name
     caption: str
     subject: str = ""
+    vertical: bool = True  # vertical clips can bake a caption; landscape can't
+    phase: str = "setup"   # "setup" (pre-render picker) → "review" (redo loop)
+    caption_choices: list[str] = field(default_factory=list)  # Claude's ideas
     params: EditParams = field(default_factory=EditParams)
     revision: int = 0
     history: list[str] = field(default_factory=list)

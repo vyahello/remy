@@ -46,8 +46,9 @@ edited clip ready to post (see `docs/IDEAS.md`).
    tiers on constantly-updating screen recordings).
 4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
    `content_crop`) — hard-trim boring lead-ins/outros (open and close on
-   action); prepend a ~1.3s cold-open hook of the strongest beat (biased
-   late, where the payoff lives; `--no-hook` to disable); auto-zoom into
+   action); optionally prepend a ~1.3s cold-open hook of the strongest
+   beat (biased late, where the payoff lives; opt-in via `--hook`, off by
+   default — the bot defaults it off too); auto-zoom into
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).
    `--zoom F` (`analysis.zoom_crop`) is the creator's framing dial on
    top of the auto framing: >1 punches in tighter around the same
@@ -170,9 +171,9 @@ skipped otherwise. Server setup: `deploy/bootstrap.sh`, runbook
 ```bash
 venv/bin/python3 -m tokcut original.MOV \
   -c "How I set this up ⚡" \
-  --target 53 -o auto_edited.mp4
+  --hook --target 53 -o auto_edited.mp4
 # with music:
 venv/bin/python3 -m tokcut original.MOV \
   -c "How I set this up ⚡" \
-  --target 53 --music --music-style phonk -o auto_edited_music.mp4
+  --hook --target 53 --music --music-style phonk -o auto_edited_music.mp4
 ```

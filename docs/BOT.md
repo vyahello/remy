@@ -1,23 +1,26 @@
 # Running the Telegram bot
 
 Status: **step 5** — the full loop on a local Bot API server. Send a clip,
-Claude watches it and writes the caption, the bot renders the 1080x1920
-edit, Claude reviews the result, and the file arrives with
-**[✅ Approve] [🔁 Redo]** buttons. Tap Redo and say what to change in your
-own words — Claude maps it onto the editor's settings and a new revision is
-rendered. With the optional local Bot API server, full ~250 MB iPhone clips
-go through (the cloud API caps at 50 MB).
+Claude proposes captions, you pick the caption and options in a setup
+screen and tap **🎬 Render**, the bot renders the 1080x1920 edit, Claude
+reviews the result, and the file arrives with **[✅ Approve] [🔁 Redo]**
+buttons. Tap Redo and say what to change in your own words — Claude maps it
+onto the editor's settings and a new revision is rendered. With the optional
+local Bot API server, full ~250 MB iPhone clips go through (the cloud API
+caps at 50 MB).
 
 ## How a clip flows
 
-1. You send a video **as a file**. If you add a message caption, that
-   exact text is used on-video. If not, **Claude watches sampled frames
-   and writes the caption itself** (subject + caption are messaged to you).
-   **Landscape clips** (laptop/OBS recordings) bake in no caption: they
-   keep their native resolution so they can go fullscreen in TikTok —
-   cuts/speed-ups/edge-trims only. Claude still messages you **caption
-   ideas to copy** into TikTok's own text tool.
-2. The caption passes the eligibility check; warnings are forwarded.
+1. You send a video **as a file**. **Claude watches sampled frames and
+   proposes captions** (subject + ideas are messaged to you). Nothing
+   renders yet.
+2. A **setup screen** appears. You pick the caption — tap an idea, *type
+   your own*, or **🚫 No caption** — and flip the options you want before
+   rendering: **cold open** (off by default), length, zoom, look, music.
+   Defaults are **no cold open and no caption**. Tap **🎬 Render** to start.
+   A message caption sent with the file pre-selects it. **Landscape clips**
+   (laptop/OBS recordings) bake no caption — native resolution so they go
+   fullscreen in TikTok; Claude sends caption ideas to copy instead.
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
 4. **Claude reviews the rendered output** (hook, caption legibility,

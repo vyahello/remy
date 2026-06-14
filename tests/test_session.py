@@ -58,18 +58,18 @@ def test_validate_regenerate_flag():
 def test_apply_updates_changes_and_describes():
     s = _session()
     changes = apply_updates(s, {"caption": "better caption", "target": 30.0,
-                                "hook": False})
+                                "hook": True})
     assert s.caption == "better caption"
     assert s.past_captions == ["original caption"]
     assert s.params.target == 30.0
-    assert s.params.hook is False
+    assert s.params.hook is True  # off by default, so turning on is a change
     assert len(changes) == 3
 
 
 def test_apply_updates_noop_reports_nothing():
     s = _session()
     assert apply_updates(s, {"caption": "original caption",
-                             "hook": True}) == []
+                             "hook": False}) == []  # hook off is the default
 
 
 def test_session_summary_mentions_state():
@@ -158,7 +158,7 @@ def test_tweak_updates_auto_target_uses_sweet_spot():
 def test_tweak_updates_toggles_and_music():
     from tokcut.bot.session import EditParams, tweak_updates
     p = EditParams()
-    assert tweak_updates("hook", p) == {"hook": False}
+    assert tweak_updates("hook", p) == {"hook": True}  # default off → on
     assert tweak_updates("crop", p) == {"crop": False}
     assert tweak_updates("phonk", p) == {"music": "phonk"}
     assert tweak_updates("nomusic", p) == {"music": "off"}

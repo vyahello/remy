@@ -296,6 +296,42 @@ def test_dry_run_prints_hook_card_and_renders_nothing(monkeypatch):
     assert called["render"] is False
 
 
+def test_filtergraph_vertical_no_caption():
+    segs = [(0, 5, 1.0)]
+    fc, v, _a = R.build_filtergraph(segs, SRC, LAY, 60, has_caption=False)
+    assert v == "[vout]"
+    assert "overlay" not in fc   # nothing baked over the video
+    assert "pad=" in fc          # still boxed onto the 1080x1920 canvas
+    assert "[base]format=yuv420p10le[vout]" in fc
+
+
+def test_filtergraph_vertical_no_caption_music_index():
+    # caption slot is skipped, so music is input [1] (right after the segment)
+    segs = [(0, 5, 1.0)]
+    fc, _v, a = R.build_filtergraph(
+        segs, SRC, LAY, 60, has_caption=False, with_music=True)
+    assert a == "[anorm]"
+    assert "[1:a]volume" in fc
+
+
+def test_format_video_vertical_no_caption_no_overlay():
+    fc = R._format_video("[vc]", SRC, LAY, None, "", 60, "")
+    assert "overlay" not in fc
+    assert fc.endswith("[base]format=yuv420p10le[vout]")
+
+
+def test_dry_run_vertical_no_caption_does_not_raise(monkeypatch):
+    from tokcut import cli
+    src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
+           "duration": 20.0, "transfer": ""}
+    monkeypatch.setattr(
+        cli, "plan",
+        lambda *a, **k: (src, [(0, 2, 1.0), (2, 10, 2.0)], 8.0,
+                         np.zeros((3, 4, 4)), None))
+    out = cli.edit("in.mp4", "", dry_run=True, on_progress=lambda _l: None)
+    assert out.endswith("_tokcut.mp4")  # vertical + empty caption is allowed
+
+
 def test_render_single_adds_shortest_with_music(monkeypatch):
     captured = {}
     monkeypatch.setattr(R, "_run",
