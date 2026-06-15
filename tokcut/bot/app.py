@@ -114,15 +114,15 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     def opt(label: str, key: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(label, callback_data=OPT + key)
 
-    tic = lambda on: " ✅" if on else ""  # noqa: E731
+    chk = lambda on: "✅" if on else "⬜"  # noqa: E731  visible on/off state
     toggles = [
-        opt("🪝 Cold open " + ("ON" if p.hook else "off"), "hook"),
+        opt(f"🪝 Cold open {chk(p.hook)}", "hook"),
         opt("⚡ Shorter", "shorter"), opt("🐢 Longer", "longer"),
-        opt("🔍 Zoom " + ("on" if p.crop else "off"), "crop"),
-        opt("✨ Look " + ("on" if p.look else "off"), "look"),
-        opt("🥁 Phonk" + tic(p.music_style == "phonk"), "phonk"),
-        opt("🎹 Synth" + tic(p.music_style == "synthwave"), "synthwave"),
-        opt("🔇 No music" + tic(not p.music_style), "nomusic"),
+        opt(f"🔍 Zoom {chk(p.crop)}", "crop"),
+        opt(f"✨ Look {chk(p.look)}", "look"),
+        opt(f"🥁 Phonk {chk(p.music_style == 'phonk')}", "phonk"),
+        opt(f"🎹 Synth {chk(p.music_style == 'synthwave')}", "synthwave"),
+        opt(f"🔇 No music {chk(not p.music_style)}", "nomusic"),
     ]
     rows += [toggles[i:i + 2] for i in range(0, len(toggles), 2)]
     rows.append([InlineKeyboardButton("🎬 Render", callback_data=RENDER)])
