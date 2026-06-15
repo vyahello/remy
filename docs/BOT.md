@@ -3,8 +3,8 @@
 Status: **step 5** — the full loop on a local Bot API server. Send a clip,
 Claude proposes captions, you pick the caption and options in a setup
 screen and tap **🎬 Render**, the bot renders the 1080x1920 edit, Claude
-reviews the result, and the file arrives with **[✅ Approve] [🔁 Redo]**
-buttons. Tap Redo and say what to change in your own words — Claude maps it
+writes paste-ready TikTok post copy (a fun blurb + relevant hashtags), and
+the file arrives with that copy and **[✅ Approve] [🔁 Redo]** buttons. Tap Redo and say what to change in your own words — Claude maps it
 onto the editor's settings and a new revision is rendered. With the optional
 local Bot API server, full ~250 MB iPhone clips go through (the cloud API
 caps at 50 MB).
@@ -23,10 +23,12 @@ caps at 50 MB).
    fullscreen in TikTok; Claude sends caption ideas to copy instead.
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
-4. **Claude reviews the rendered output** (hook, caption legibility,
-   ending) and its verdict is attached to the reply.
+4. **Claude writes the TikTok post copy** from the rendered frames — a
+   short fun description plus 5–8 relevant hashtags, grounded only in what
+   the video shows (no invented features) and moderation-filtered. It's
+   attached to the reply, ready to paste into the TikTok caption box.
 5. The finished `.mp4` comes back as a **document** (no recompression)
-   with [✅ Approve] [🔁 Redo] buttons.
+   with the post copy and [✅ Approve] [🔁 Redo] buttons.
 6. **Redo**: a quick-tap keyboard (two buttons per row, so nothing is
    clipped on iPhone) covers the common tweaks — ⚡ shorter, 🐢 longer,
    🔎 tighter / 🔭 wider framing, 🪝 cold open on/off, 🔍 zoom on/off,
@@ -50,7 +52,7 @@ The judgment layer runs Claude Code headless (`claude -p`). On a dev
 machine an existing `claude` login is enough. On a server, generate a
 long-lived token from your subscription with `claude setup-token` and set
 `CLAUDE_CODE_OAUTH_TOKEN` in the bot's environment. Set `TOKCUT_CLAUDE=off`
-to disable the judgment layer entirely (filename captions, no review).
+to disable the judgment layer entirely (filename captions, no post copy).
 
 ## Setup
 
@@ -109,6 +111,6 @@ paths instead of an HTTP copy, so even large clips land instantly.
 
 - **Python** (this code): Telegram I/O, allow-list, downloads, running
   `tokcut` — everything deterministic.
-- **Claude Code** (subscription OAuth, later): caption wording, reviewing
-  the rendered output, the approve/redo conversation. Set
+- **Claude Code** (subscription OAuth): caption wording, the paste-ready
+  TikTok post copy, and the approve/redo conversation. Set
   `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) now so it's ready.

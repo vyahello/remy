@@ -52,3 +52,23 @@ def test_run_claude_unavailable(monkeypatch):
     monkeypatch.setattr(J, "claude_available", lambda: False)
     with pytest.raises(J.JudgeUnavailable):
         J.run_claude("hi")
+
+
+# ----------------------------------------------------------- post copy
+
+def test_clean_hashtags_normalizes_and_dedupes():
+    out = J.clean_hashtags(["#IPython", "python coding", "#python", "#tech!"])
+    assert out == ["#ipython", "#pythoncoding", "#python", "#tech"]
+
+
+def test_clean_hashtags_drops_flagged_terms():
+    # 'hack' is a moderation-flagged term — must not survive as a hashtag
+    assert "#hacking" not in J.clean_hashtags(["#hacking", "#coding"])
+    assert J.clean_hashtags(["#coding"]) == ["#coding"]
+
+
+def test_clean_hashtags_caps_at_eight_and_handles_junk():
+    many = [f"#tag{i}" for i in range(20)]
+    assert len(J.clean_hashtags(many)) == 8
+    assert J.clean_hashtags("not a list") == []
+    assert J.clean_hashtags([1, "", "#"]) == []

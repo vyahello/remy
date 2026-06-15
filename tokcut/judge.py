@@ -195,59 +195,78 @@ def suggest_caption(
     return captions[0], subject
 
 
-REVIEW_PROMPT = CREATOR_CONTEXT + """
-You are a professional TikTok editor reviewing a finished vertical
-(1080x1920) edit before it is posted.
+POST_PROMPT = CREATOR_CONTEXT + """
+You are the creator writing the post copy for a finished TikTok video.
+This is paste-ready text for the TikTok caption box — NOT an on-video
+overlay and NOT a review.
 
 Read (view) these frames, sampled in chronological order from the
 FINISHED video:
 {frames}
 
 {caption_note}
-The first frame listed IS the video's opening (the cold-open hook).
 
-Check, strictly:
-1. Any expected caption is fully visible, legible, and not covering the
-   action (skip this check when there is intentionally no caption).
-2. The opening frame works as a scroll-stopping hook (action, not setup).
-3. The content itself is readable/judgeable at phone size.
-4. The final frame ends on something worth seeing (not a desktop/cutoff).
+Produce two things, both STRICTLY grounded in what the frames actually
+show — never invent a tool, feature, result, or step that is not
+visible. Identify the exact app/tool/language from on-screen text.
 
-The editor can fix: caption text, caption position, output length,
-hook on/off, auto-zoom on/off. It cannot increase source resolution or
-re-record. Say "redo" ONLY for problems those controls can fix; put
-source-quality limitations in "notes" instead.
+1. description — one or two short, fun sentences (max ~150 chars) that
+   say what the viewer is watching. Energetic but accurate; at most two
+   emoji. No hashtags inside it.
+2. hashtags — 5 to 8 relevant tags, lowercase, no spaces, each starting
+   with '#'. Most specific first (the actual tool/topic), then broader
+   (#coding #tech). Only tags that genuinely match the content. No
+   sensational or policy-risky tags (no hack/exploit/attack/etc.).
 
 Reply with ONLY a JSON object, no other text:
-{{"verdict": "approve" or "redo",
- "issues": ["<each concrete problem, if any>"],
- "notes": "<one-line overall impression>"}}
+{{"description": "<the fun, accurate description>",
+ "hashtags": ["#tag1", "#tag2", "..."]}}
 """
 
 
-def review_output(video: str, duration: float, caption: str) -> dict:
-    """Have Claude review the rendered output. Returns the verdict dict."""
-    tmp = tempfile.mkdtemp(prefix="tokcut_review_")
+def suggest_post(video: str, duration: float, caption: str = "") -> dict:
+    """Have Claude write paste-ready TikTok post copy from the output.
+
+    Returns {"description": str, "hashtags": [str, ...]} — a fun, accurate
+    blurb plus relevant hashtags the creator can copy straight into the
+    TikTok caption box. Grounded only in the sampled frames so it can't
+    claim anything the video doesn't show. Hashtags that trip the caption
+    moderation check are dropped. Raises JudgeUnavailable / ValueError on
+    failure — the caller treats post copy as best-effort.
+    """
+    tmp = tempfile.mkdtemp(prefix="tokcut_post_")
     try:
-        # first sample inside the opening second — that's the hook frame
-        times = [min(0.4, duration / 10)] + spread_times(
-            duration, n=4, margin=0.2)
-        frames = extract_frames(video, times, tmp)
+        frames = extract_frames(video, spread_times(duration, n=5,
+                                                    margin=0.1), tmp)
         caption_note = (
-            f'The on-video caption should read: "{caption}"' if caption
-            else "There is intentionally NO on-video caption (landscape "
-                 "export — the creator overlays their own).")
-        prompt = REVIEW_PROMPT.format(
+            f'The on-video caption already reads: "{caption}" — do not '
+            "repeat it verbatim, complement it." if caption
+            else "This export has no on-video caption.")
+        prompt = POST_PROMPT.format(
             frames="\n".join(frames), caption_note=caption_note)
         reply = parse_json_obj(run_claude(prompt))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    verdict = str(reply.get("verdict", "")).lower()
-    if verdict not in ("approve", "redo"):
-        raise ValueError(f"unexpected verdict: {reply!r}")
-    return {"verdict": verdict,
-            "issues": [str(i) for i in reply.get("issues", [])],
-            "notes": str(reply.get("notes", ""))}
+    return {"description": str(reply.get("description", "")).strip(),
+            "hashtags": clean_hashtags(reply.get("hashtags", []))}
+
+
+def clean_hashtags(raw: object) -> list[str]:
+    """Normalize, de-dupe and moderation-filter Claude's hashtag list."""
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        tag = re.sub(r"\s+", "", str(item)).lstrip("#")
+        tag = re.sub(r"[^0-9A-Za-z_]", "", tag).lower()
+        if not tag or not re.search(r"[a-z]", tag) or len(out) >= 8:
+            continue  # need at least one letter — "#1" is useless
+        hashed = "#" + tag
+        # a flagged term in a hashtag hurts reach the same way — drop it
+        if check_caption(tag) or hashed in out:
+            continue
+        out.append(hashed)
+    return out
 
 
 FEEDBACK_PROMPT = CREATOR_CONTEXT + """

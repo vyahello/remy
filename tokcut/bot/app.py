@@ -3,7 +3,7 @@
 Python's job: Telegram I/O, allow-list, downloads, session state, running
 the edit pipeline (queued, in a worker thread), validating every parameter
 change. Claude Code's job (subscription OAuth): watching frames to write
-the caption, reviewing the rendered output, and interpreting free-text
+the caption, writing the TikTok post copy, and interpreting free-text
 redo feedback into setting changes.
 """
 
@@ -29,9 +29,9 @@ from ..cli import edit
 from ..judge import (
     claude_available,
     interpret_feedback,
-    review_output,
     suggest_caption,
     suggest_captions,
+    suggest_post,
 )
 from .config import BotConfig, is_allowed, load_config
 from .pipeline import (
@@ -67,6 +67,16 @@ VERDICT_KEYBOARD = InlineKeyboardMarkup([[
 
 def _short(text: str, n: int = 26) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def format_post_kit(post: dict) -> str:
+    """Paste-ready TikTok post copy block (description + hashtags)."""
+    desc = (post.get("description") or "").strip()
+    tags = " ".join(post.get("hashtags") or [])
+    body = "\n\n".join(part for part in (desc, tags) if part)
+    if not body:
+        return ""
+    return "📋 Caption to copy for TikTok:\n" + body
 
 
 def setup_text(session: EditSession) -> str:
@@ -202,6 +212,7 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "baked caption (ideas are sent to copy instead).\n"
         "🔇 Exports are *muted* — add a trending sound in the app.\n\n"
         "*3. Review the take*\n"
+        "📋 It arrives with paste-ready TikTok copy (blurb + hashtags).\n"
         "✅ *Approve* — done; working files are cleaned up.\n"
         "🔁 *Redo* — tap a quick tweak or *type what to change*: "
         "_\"shorter\", \"zoom in tighter\", \"add phonk music\"_.\n\n"
@@ -373,22 +384,17 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             return
         session.outputs.append(out)  # tracked for cleanup on approve
 
-        review_line = ""
+        post_kit = ""
         if cfg.claude_judge and claude_available():
             await status.edit_text(
-                f"🧐 Take {rev} is cut — sending it to the director…")
+                f"✍️ Take {rev} is cut — writing the TikTok post copy…")
             try:
                 duration = (await asyncio.to_thread(probe, out))["duration"]
-                review = await asyncio.to_thread(
-                    review_output, out, duration, session.caption)
-                if review["verdict"] == "approve":
-                    review_line = f"🧐 Director: ✅ {review['notes']}"
-                else:
-                    issues = "\n".join(f"• {i}" for i in review["issues"])
-                    review_line = (f"🧐 Director: 🔁 would tweak:\n{issues}\n"
-                                   f"({review['notes']})")
+                post = await asyncio.to_thread(
+                    suggest_post, out, duration, session.caption)
+                post_kit = format_post_kit(post)
             except Exception as exc:  # noqa: BLE001 — best-effort
-                log.warning("output review failed: %s", exc)
+                log.warning("post copy failed: %s", exc)
 
         session.history.append(f"r{rev}: {session.summary()}")
         size_mb = os.path.getsize(out) / 1048576
@@ -402,8 +408,8 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             doc_caption = f"🎬 Take {rev} · 🖥️ landscape, add your caption"
         if not p.music_style and not p.keep_audio:
             doc_caption += "\n🔇 Muted — add a trending sound in TikTok."
-        if review_line:
-            doc_caption += f"\n\n{review_line}"
+        if post_kit:
+            doc_caption += f"\n\n{post_kit}"
         with open(out, "rb") as fh:
             await msg.reply_document(
                 document=fh,

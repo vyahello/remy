@@ -238,6 +238,21 @@ def test_setup_text_reflects_state():
     assert "no baked caption" in app.setup_text(_setup_session(vertical=False))
 
 
+def test_format_post_kit_combines_description_and_tags():
+    app = _app()
+    out = app.format_post_kit(
+        {"description": "Quick IPython demo ⚡", "hashtags": ["#ipython",
+                                                             "#python"]})
+    assert "Caption to copy for TikTok" in out
+    assert "Quick IPython demo ⚡" in out
+    assert "#ipython #python" in out
+
+
+def test_format_post_kit_empty_returns_blank():
+    app = _app()
+    assert app.format_post_kit({"description": "", "hashtags": []}) == ""
+
+
 def test_session_defaults_to_setup_phase_hook_off():
     from tokcut.bot.session import EditParams, EditSession
     assert EditParams().hook is False  # cold open opt-in
