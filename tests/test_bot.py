@@ -193,8 +193,16 @@ def _datas(kb):
     return [b.callback_data for row in kb.inline_keyboard for b in row]
 
 
-def test_setup_keyboard_vertical_has_caption_choices_and_render():
+def _app():
+    # tokcut.bot.app imports python-telegram-bot (the [bot] extra); skip the
+    # picker tests cleanly when only [dev] is installed.
+    pytest.importorskip("telegram")
     from tokcut.bot import app
+    return app
+
+
+def test_setup_keyboard_vertical_has_caption_choices_and_render():
+    app = _app()
     kb = app.setup_keyboard(_setup_session(vertical=True))
     datas = _datas(kb)
     assert app.SETCAP + "0" in datas and app.SETCAP + "1" in datas
@@ -205,7 +213,7 @@ def test_setup_keyboard_vertical_has_caption_choices_and_render():
 
 
 def test_setup_keyboard_landscape_has_no_caption_buttons():
-    from tokcut.bot import app
+    app = _app()
     kb = app.setup_keyboard(_setup_session(vertical=False))
     datas = _datas(kb)
     assert not any(d.startswith(app.SETCAP) for d in datas)
@@ -214,14 +222,14 @@ def test_setup_keyboard_landscape_has_no_caption_buttons():
 
 
 def test_setup_keyboard_marks_selected_caption():
-    from tokcut.bot import app
+    app = _app()
     kb = app.setup_keyboard(_setup_session(vertical=True, caption="idea one"))
     first = kb.inline_keyboard[0][0]
     assert first.callback_data == app.SETCAP + "0" and "✅" in first.text
 
 
 def test_setup_text_reflects_state():
-    from tokcut.bot import app
+    app = _app()
     s = _setup_session(vertical=True)
     assert "caption: none" in app.setup_text(s)
     assert "cold open off" in app.setup_text(s)
