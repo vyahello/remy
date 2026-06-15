@@ -10,10 +10,10 @@ VIDEO_BOX_H = 1700      # max video height inside the canvas
 TOP_PAD = 30
 
 # TikTok UI safe zone: the Following/For-You tab bar sits in the top ~6%,
-# so 7% clears it while letting a tall two-line caption ride high on the
+# so 8% clears it while letting a tall two-line caption ride high on the
 # black bar above the content (instead of dipping onto it). Bottom ~22%
 # is the description / music ticker / username — captions live between.
-SAFE_TOP, SAFE_BOTTOM = 0.07, 0.78
+SAFE_TOP, SAFE_BOTTOM = 0.08, 0.78
 
 # Auto placement keeps the caption in the top half of the frame so it
 # stays clear of the main action (which sits lower in most clips).
