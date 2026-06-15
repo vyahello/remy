@@ -43,3 +43,18 @@ def test_auto_avoids_salient_band():
     lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
     # caption band should not start in the very top portion of the video
     assert lay["cap_y"] > lay["vy"] + lay["vh"] * 0.15
+
+
+def test_auto_clear_frame_sits_at_top():
+    cap_h = 200
+    sal = np.zeros((100, 60), np.float32)  # nothing busy anywhere
+    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
+    # with a clear frame the caption pins to the top of the safe zone
+    assert lay["cap_y"] <= int(L.SAFE_TOP * L.OUT_H) + 30
+
+
+def test_auto_never_drops_below_mid_frame():
+    cap_h = 200
+    sal = np.ones((100, 60), np.float32)  # everything busy — bias decides
+    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
+    assert lay["cap_y"] + cap_h <= L.CAP_MAX_Y
