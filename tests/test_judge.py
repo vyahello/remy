@@ -67,8 +67,9 @@ def test_clean_hashtags_drops_flagged_terms():
     assert J.clean_hashtags(["#coding"]) == ["#coding"]
 
 
-def test_clean_hashtags_caps_at_eight_and_handles_junk():
+def test_clean_hashtags_caps_at_five_keeping_order():
     many = [f"#tag{i}" for i in range(20)]
-    assert len(J.clean_hashtags(many)) == 8
+    out = J.clean_hashtags(many)
+    assert out == ["#tag0", "#tag1", "#tag2", "#tag3", "#tag4"]  # first 5
     assert J.clean_hashtags("not a list") == []
     assert J.clean_hashtags([1, "", "#"]) == []

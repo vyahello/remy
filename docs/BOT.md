@@ -24,7 +24,7 @@ caps at 50 MB).
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
 4. **Claude writes the TikTok post copy** from the rendered frames — a
-   short fun description plus 5–8 relevant hashtags, grounded only in what
+   short fun description plus the 5 most relevant hashtags, grounded only in what
    the video shows (no invented features) and moderation-filtered. It's
    attached to the reply, ready to paste into the TikTok caption box.
 5. The finished `.mp4` comes back as a **document** (no recompression)

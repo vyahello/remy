@@ -213,10 +213,12 @@ visible. Identify the exact app/tool/language from on-screen text.
 1. description — one or two short, fun sentences (max ~150 chars) that
    say what the viewer is watching. Energetic but accurate; at most two
    emoji. No hashtags inside it.
-2. hashtags — 5 to 8 relevant tags, lowercase, no spaces, each starting
-   with '#'. Most specific first (the actual tool/topic), then broader
-   (#coding #tech). Only tags that genuinely match the content. No
-   sensational or policy-risky tags (no hack/exploit/attack/etc.).
+2. hashtags — EXACTLY 5 tags (TikTok ranks the first few; more dilutes
+   reach), lowercase, no spaces, each starting with '#'. Order by
+   relevance, most specific first: the actual tool/topic the video is
+   about, then one or two broader reach tags (#coding #tech). Every tag
+   must genuinely match what's shown. No sensational or policy-risky tags
+   (no hack/exploit/attack/etc.).
 
 Reply with ONLY a JSON object, no other text:
 {{"description": "<the fun, accurate description>",
@@ -251,15 +253,22 @@ def suggest_post(video: str, duration: float, caption: str = "") -> dict:
             "hashtags": clean_hashtags(reply.get("hashtags", []))}
 
 
+MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight
+
+
 def clean_hashtags(raw: object) -> list[str]:
-    """Normalize, de-dupe and moderation-filter Claude's hashtag list."""
+    """Normalize, de-dupe, moderation-filter and cap Claude's hashtags.
+
+    Order is preserved (Claude is told to put the most relevant first),
+    so the cap keeps the strongest MAX_HASHTAGS tags.
+    """
     if not isinstance(raw, list):
         return []
     out: list[str] = []
     for item in raw:
         tag = re.sub(r"\s+", "", str(item)).lstrip("#")
         tag = re.sub(r"[^0-9A-Za-z_]", "", tag).lower()
-        if not tag or not re.search(r"[a-z]", tag) or len(out) >= 8:
+        if not tag or not re.search(r"[a-z]", tag) or len(out) >= MAX_HASHTAGS:
             continue  # need at least one letter — "#1" is useless
         hashed = "#" + tag
         # a flagged term in a hashtag hurts reach the same way — drop it
