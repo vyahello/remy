@@ -246,8 +246,8 @@ def test_format_post_kit_combines_description_and_tags():
     out = app.format_post_kit(
         {"description": "Quick IPython demo ⚡", "hashtags": ["#ipython",
                                                              "#python"]})
-    assert "Caption to copy for TikTok" in out
-    assert "Quick IPython demo ⚡" in out
+    # bare body (no heading) so it can go inside a copyable <pre> block
+    assert out.startswith("Quick IPython demo ⚡")
     assert "#ipython #python" in out
 
 

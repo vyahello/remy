@@ -70,13 +70,13 @@ def _short(text: str, n: int = 26) -> str:
 
 
 def format_post_kit(post: dict) -> str:
-    """Paste-ready TikTok post copy block (description + hashtags)."""
+    """The paste-ready TikTok caption body (description + hashtags).
+
+    Returned bare (no heading) so it can be sent inside a copyable block.
+    """
     desc = (post.get("description") or "").strip()
     tags = " ".join(post.get("hashtags") or [])
-    body = "\n\n".join(part for part in (desc, tags) if part)
-    if not body:
-        return ""
-    return "📋 Caption to copy for TikTok:\n" + body
+    return "\n\n".join(part for part in (desc, tags) if part)
 
 
 def setup_text(session: EditSession) -> str:
@@ -415,8 +415,6 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             doc_caption = f"🎬 Take {rev} · 🖥️ landscape, add your caption"
         if not p.music_style and not p.keep_audio:
             doc_caption += "\n🔇 Muted — add a trending sound in TikTok."
-        if post_kit:
-            doc_caption += f"\n\n{post_kit}"
         with open(out, "rb") as fh:
             await msg.reply_document(
                 document=fh,
@@ -429,6 +427,14 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 read_timeout=600,
                 write_timeout=600,
             )
+        # Send the TikTok copy as its OWN message in a code block: the
+        # document caption isn't selectable on iOS, but a <pre> block gets
+        # a one-tap copy button in Telegram mobile.
+        if post_kit:
+            await msg.reply_text(
+                "📋 Caption for TikTok — tap to copy:\n"
+                f"<pre>{html.escape(post_kit)}</pre>",
+                parse_mode="HTML")
 
 
 async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
