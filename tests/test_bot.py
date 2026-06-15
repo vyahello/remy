@@ -209,7 +209,10 @@ def test_setup_keyboard_vertical_has_caption_choices_and_render():
     assert app.OWNCAP in datas and app.NOCAP in datas
     assert app.OPT + "hook" in datas and app.RENDER in datas
     labels = [b.text for row in kb.inline_keyboard for b in row]
-    assert any("Cold open ⬜" in t for t in labels)  # default off, unchecked
+    assert any("Cold open: off" in t for t in labels)  # default off, in words
+    # exactly one caption choice is marked active; default = No caption
+    assert any(t == "✅ No caption" for t in labels)
+    assert any(t == "✅ Mute" for t in labels)  # music muted by default
 
 
 def test_setup_keyboard_landscape_has_no_caption_buttons():

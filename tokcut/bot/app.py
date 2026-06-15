@@ -106,35 +106,42 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     p = session.params
     rows: list[list[InlineKeyboardButton]] = []
 
-    if session.vertical:
-        for i, idea in enumerate(session.caption_choices[:3]):
-            mark = "✅ " if session.caption == idea else "💬 "
-            # full-width row — show the whole caption, not the 26-char
-            # half-button clip (TikTok captions are ≤40 chars anyway)
-            rows.append([InlineKeyboardButton(
-                mark + _short(idea, 64), callback_data=SETCAP + str(i))])
-        own = (session.caption
-               and session.caption not in session.caption_choices)
-        rows.append([
-            InlineKeyboardButton(("✅ " if own else "") + "✍️ Type my own",
-                                 callback_data=OWNCAP),
-            InlineKeyboardButton(("✅ " if not session.caption else "")
-                                 + "🚫 No caption", callback_data=NOCAP)])
-
     def opt(label: str, key: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(label, callback_data=OPT + key)
 
-    chk = lambda on: "✅" if on else "⬜"  # noqa: E731  visible on/off state
-    toggles = [
-        opt(f"🪝 Cold open {chk(p.hook)}", "hook"),
-        opt("⚡ Shorter", "shorter"), opt("🐢 Longer", "longer"),
-        opt(f"🔍 Zoom {chk(p.crop)}", "crop"),
-        opt(f"✨ Look {chk(p.look)}", "look"),
-        opt(f"🥁 Phonk {chk(p.music_style == 'phonk')}", "phonk"),
-        opt(f"🎹 Synth {chk(p.music_style == 'synthwave')}", "synthwave"),
-        opt(f"🔇 No music {chk(not p.music_style)}", "nomusic"),
-    ]
-    rows += [toggles[i:i + 2] for i in range(0, len(toggles), 2)]
+    # one rule everywhere: a leading ✅ marks the choice that is active
+    # right now; everything else shows its own icon. No empty checkboxes.
+    def pick(active: bool, icon: str, name: str) -> str:
+        return ("✅ " if active else icon + " ") + name
+
+    if session.vertical:
+        for i, idea in enumerate(session.caption_choices[:3]):
+            # full-width row — show the whole caption, not a 26-char clip
+            rows.append([InlineKeyboardButton(
+                pick(session.caption == idea, "💬", _short(idea, 58)),
+                callback_data=SETCAP + str(i))])
+        own = bool(session.caption
+                   and session.caption not in session.caption_choices)
+        rows.append([
+            InlineKeyboardButton(pick(own, "✍️", "Type my own"),
+                                 callback_data=OWNCAP),
+            InlineKeyboardButton(pick(not session.caption, "🚫", "No caption"),
+                                 callback_data=NOCAP)])
+
+    # booleans spell the state out in words (ON ✅ / off) — no cryptic box
+    def toggle(icon: str, name: str, on: bool,
+               key: str) -> InlineKeyboardButton:
+        return opt(f"{icon} {name}: " + ("ON ✅" if on else "off"), key)
+
+    rows.append([toggle("🪝", "Cold open", p.hook, "hook"),
+                 toggle("🔍", "Zoom", p.crop, "crop")])
+    rows.append([toggle("✨", "Look", p.look, "look"),
+                 opt("⚡ Shorter", "shorter")])
+    rows.append([opt("🐢 Longer", "longer"),
+                 opt(pick(not p.music_style, "🔇", "Mute"), "nomusic")])
+    rows.append([opt(pick(p.music_style == "phonk", "🥁", "Phonk"), "phonk"),
+                 opt(pick(p.music_style == "synthwave", "🎹", "Synth"),
+                     "synthwave")])
     rows.append([InlineKeyboardButton("🎬 Render", callback_data=RENDER)])
     return InlineKeyboardMarkup(rows)
 
