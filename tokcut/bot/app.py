@@ -99,8 +99,10 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     if session.vertical:
         for i, idea in enumerate(session.caption_choices[:3]):
             mark = "✅ " if session.caption == idea else "💬 "
+            # full-width row — show the whole caption, not the 26-char
+            # half-button clip (TikTok captions are ≤40 chars anyway)
             rows.append([InlineKeyboardButton(
-                mark + _short(idea), callback_data=SETCAP + str(i))])
+                mark + _short(idea, 64), callback_data=SETCAP + str(i))])
         own = (session.caption
                and session.caption not in session.caption_choices)
         rows.append([
