@@ -1,5 +1,7 @@
 """Caption rendering (Pillow) and TikTok-eligibility checks."""
 
+import re
+
 from PIL import Image, ImageDraw, ImageFont
 
 FONT_TEXT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
@@ -36,6 +38,12 @@ RISKY_TERMS: dict[str, str | None] = {
     "free wifi": None,
 }
 
+# Match each risky term only as a WHOLE word — plain substring matching
+# false-flags legitimate tech wording (#hackathon, jamstack, Spyder,
+# "wisecrack") and would silently strip good captions/hashtags.
+_RISKY_RE = {term: re.compile(rf"\b{re.escape(term)}\b")
+             for term in RISKY_TERMS}
+
 MAX_CAPTION_CHARS = 48
 
 # Animated hook card: a bigger version of the caption rendered for the
@@ -50,7 +58,7 @@ def check_caption(text: str) -> list[str]:
     low = text.lower()
     warnings: list[str] = []
     for term, alt in RISKY_TERMS.items():
-        if term in low:
+        if _RISKY_RE[term].search(low):
             hint = f' — try "{alt}"' if alt else ""
             warnings.append(f'risky term "{term}"{hint}')
     if len(text) > MAX_CAPTION_CHARS:

@@ -17,6 +17,16 @@ def test_check_caption_clean_passes():
     assert C.check_caption("How I set up my new desk") == []
 
 
+def test_check_caption_whole_word_only():
+    # legit tech words that merely CONTAIN a risky substring must pass
+    for clean in ("Building with Jamstack", "Spyder IDE for Python",
+                  "Joining a hackathon this weekend", "Raspberry Pi setup"):
+        assert C.check_caption(clean) == [], clean
+    # the standalone risky word is still flagged
+    assert C.check_caption("How to jam a signal")  # "jam" as a word
+    assert C.check_caption("hack your router")
+
+
 def test_check_caption_flags_overlong():
     warnings = C.check_caption("x" * (C.MAX_CAPTION_CHARS + 5))
     assert any("renders small" in w for w in warnings)
