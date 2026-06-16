@@ -98,6 +98,17 @@ def test_clean_hashtags_drops_flagged_terms():
     assert J.clean_hashtags(["#coding"]) == ["#coding"]
 
 
+def test_clean_description_strips_markdown_keeps_emoji_and_snake_case():
+    # backticks/asterisks/wrapping quotes are literal junk in TikTok's box
+    out = J.clean_description('"Run `btop` for a **live** monitor 📊"')
+    assert "`" not in out and "*" not in out
+    assert not out.startswith('"') and not out.endswith('"')
+    assert out == "Run btop for a live monitor 📊"
+    # snake_case survives (no markdown underscores stripped)
+    assert J.clean_description("theme solarized_dark") == \
+        "theme solarized_dark"
+
+
 def test_clean_window_normal():
     # demo runs 10s..50s of a 60s clip -> trim 10 off head, 10 off tail
     assert J.clean_window({"start": 10, "end": 50}, 60.0) == (10.0, 10.0)

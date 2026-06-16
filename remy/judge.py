@@ -159,12 +159,14 @@ Read (view) these frames, sampled in chronological order from one video:
 2. Write ONE caption that makes a viewer stop scrolling.
 
 Hard rules for the caption:
-- max {max_chars} characters, plain text, no hashtags, no quotes
+- max {max_chars} characters, plain text, no markdown/backticks, no
+  hashtags, no surrounding quotes
 - specific beats clever: name the thing ("btop — the terminal system
   monitor"), don't be vague ("check this out")
 - no sensational or policy-risky wording (hack/hacking, attack, exploit,
   deauth, crack, bypass, spy, payload, steal, free wifi)
-- at most one emoji, only at the end
+- one or two RELEVANT emoji that match the topic (e.g. 💻 🖥️ ⚡ 📊 🔥 🐧
+  ⌨️ 🚀) for visual punch — at the end, and only if they fit; never forced
 
 Reply with ONLY a JSON object, no other text:
 {{"subject": "<what the video shows, one line>",
@@ -242,20 +244,33 @@ takeaway a viewer could go and apply.
 
 Then produce two things:
 
-1. description — the teaching caption. ONE or TWO short, clean sentences
-   (aim ~120 chars, hard max ~200). Requirements:
-   - LEAD with the takeaway or the benefit, framed so the viewer knows
-     how to use it: name the tool and what it does FOR them
-     ("`btop` gives you a live, color system monitor in the terminal —
-     run it to watch CPU, RAM and processes at a glance").
-   - Be specific and precise: real tool/command/feature names from the
-     frames, not vague hype ("check this out", "so cool", "game changer"
-     are banned). No clickbait, no exaggeration, no fake urgency.
-   - Make it actionable when the video shows a usable step: the verb the
-     viewer would do (install / run / add / replace / try), grounded only
-     in what's on screen — don't invent commands.
-   - Plain, natural, confident English. At most ONE emoji, at the end.
-     No hashtags inside the description.
+1. description — the teaching caption that goes in the TikTok caption box.
+   ONE punchy line, ideally ~90-130 chars (hard max ~150). It is the
+   "tip" — write it like a sharp dev-tips creator, not documentation.
+   Requirements:
+   - PLAIN TEXT ONLY. The TikTok box does NOT render Markdown: NO
+     backticks, NO asterisks, NO underscores, NO surrounding quotes.
+     Write a tool/command name bare — btop, not `btop` or "btop".
+   - LEAD with the payoff in plain language — what the viewer gains and
+     how they'd use it. Name the tool and what it does FOR them.
+     GOOD: "btop is the system monitor your terminal deserves — live CPU,
+     RAM and network in one glance. Just run: btop"
+     TOO DRY (documentation, avoid): "btop is a resource monitor that
+     displays CPU, memory, disks, network and processes and has a menu."
+   - ONE idea only. Pick the single best takeaway; don't list every
+     feature, theme or keybind. Specific beats exhaustive.
+   - Real names from the frames, never invented. No vague hype ("check
+     this out", "so cool", "game changer", "mind blown") and no fake
+     urgency — it's a confident tip, not clickbait.
+   - End with the concrete action when the video shows one, phrased
+     simply: "Run: btop" / "Try: <command>". Grounded in what's on screen.
+   - Confident, natural English.
+   - EMOJI: use one or two RELEVANT emoji that fit the topic and give the
+     caption visual punch (e.g. 💻 🖥️ ⚡ 📊 📈 🔥 🛠️ 🚀 🐧 ⌨️) — place them
+     naturally (after a clause or at the end), not forced. Pick ones that
+     actually match the content; skip them entirely if none fit. Never
+     more than two.
+   - No hashtags inside the description (they go in the list below).
 2. hashtags — EXACTLY 5 tags (TikTok ranks the first few; more dilutes
    reach), lowercase, no spaces, each starting with '#'. Order by
    relevance, most specific first: the actual tool/topic, then the
@@ -268,6 +283,20 @@ Reply with ONLY a JSON object, no other text:
 {{"description": "<the precise, useful teaching caption>",
  "hashtags": ["#tag1", "#tag2", "..."]}}
 """
+
+
+def clean_description(text: str) -> str:
+    """Strip Markdown the TikTok caption box would show as literal junk.
+
+    TikTok renders the caption as plain text, so backticks / asterisks and
+    wrapping quotes (which Claude sometimes adds around tool names) come
+    out as garbage. Drop them; keep underscores so snake_case names like
+    solarized_dark survive, and keep emoji.
+    """
+    s = str(text).strip()
+    s = s.replace("`", "").replace("*", "")
+    s = s.strip().strip('"').strip("“”").strip("'").strip()
+    return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
 def suggest_post(video: str, duration: float, caption: str = "") -> dict:
@@ -293,7 +322,7 @@ def suggest_post(video: str, duration: float, caption: str = "") -> dict:
         reply = parse_json_obj(run_claude(prompt))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return {"description": str(reply.get("description", "")).strip(),
+    return {"description": clean_description(reply.get("description", "")),
             "hashtags": clean_hashtags(reply.get("hashtags", []))}
 
 
