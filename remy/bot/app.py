@@ -28,6 +28,7 @@ from ..caption import check_caption
 from ..cli import edit
 from ..judge import (
     claude_available,
+    detect_content_window,
     interpret_feedback,
     suggest_caption,
     suggest_captions,
@@ -90,12 +91,17 @@ def setup_text(session: EditSession) -> str:
     else:
         cap = "caption: none"
     length = "auto" if p.target is None else f"~{p.target:.0f}s"
+    trim = ""
+    if p.trim_start or p.trim_end:
+        trim = (f"\n✂️ auto-trimmed −{p.trim_start:.0f}s intro / "
+                f"−{p.trim_end:.0f}s outro (tap ✂️ on Redo to adjust)")
     return (
         "🎬 *Setup* — pick what you want, then tap *Render*.\n"
         f"{cap}\n"
         f"cold open {'on' if p.hook else 'off'} · length {length} · "
         f"zoom {'on' if p.crop else 'off'} · look "
-        f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}")
+        f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}"
+        f"{trim}")
 
 
 def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
@@ -517,19 +523,42 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     vertical = src["w"] <= src["h"]
     ideas: list[str] = []
     subject = ""
+    auto_trim = (0.0, 0.0)
     if cfg.claude_judge and claude_available():
-        await status.edit_text(
-            "👀 Claude is watching your clip for caption ideas…")
-        try:
-            ideas, subject = await asyncio.to_thread(
-                suggest_captions, dest, src["duration"])
-        except Exception as exc:  # noqa: BLE001 — judgment is best-effort
-            log.warning("caption ideas failed: %s", exc)
+        await status.edit_text("👀 Claude is watching your clip…")
+        dur = src["duration"]
+
+        async def _captions() -> tuple[list[str], str]:
+            try:
+                return await asyncio.to_thread(suggest_captions, dest, dur)
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.warning("caption ideas failed: %s", exc)
+                return [], ""
+
+        async def _window() -> tuple[float, float]:
+            # recorder-UI intros (OBS &c.) are a screen-recording thing —
+            # skip the extra Claude call for vertical phone clips
+            if vertical:
+                return (0.0, 0.0)
+            try:
+                return await asyncio.to_thread(
+                    detect_content_window, dest, dur)
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.warning("content-window detection failed: %s", exc)
+                return (0.0, 0.0)
+
+        # run both Claude calls at once so detection adds no wall-clock time
+        (ideas, subject), auto_trim = await asyncio.gather(
+            _captions(), _window())
 
     session = EditSession(source=dest, file_name=file_name, caption="",
                           subject=subject, vertical=vertical,
                           caption_choices=ideas)
     session.params.target = cfg.default_target
+    session.params.trim_start, session.params.trim_end = auto_trim
+    if auto_trim != (0.0, 0.0):
+        log.info("auto content window: trim -%.1fs/-%.1fs",
+                 *auto_trim)
     # a caption typed with the upload pre-selects it (vertical only)
     upload_caption = (msg.caption or "").strip()
     if vertical and upload_caption and not check_caption(upload_caption):

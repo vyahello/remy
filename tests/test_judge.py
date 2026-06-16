@@ -98,6 +98,26 @@ def test_clean_hashtags_drops_flagged_terms():
     assert J.clean_hashtags(["#coding"]) == ["#coding"]
 
 
+def test_clean_window_normal():
+    # demo runs 10s..50s of a 60s clip -> trim 10 off head, 10 off tail
+    assert J.clean_window({"start": 10, "end": 50}, 60.0) == (10.0, 10.0)
+
+
+def test_clean_window_whole_clip_is_content():
+    assert J.clean_window({"start": 0, "end": 60}, 60.0) == (0.0, 0.0)
+
+
+def test_clean_window_rejects_nonsense_and_overaggressive():
+    # end <= start, or a sub-MIN_CONTENT window -> no trim
+    assert J.clean_window({"start": 40, "end": 10}, 60.0) == (0.0, 0.0)
+    assert J.clean_window({"start": 10, "end": 12}, 60.0) == (0.0, 0.0)
+    # cutting more than half off an edge is too aggressive to trust
+    assert J.clean_window({"start": 40, "end": 58}, 60.0) == (0.0, 0.0)
+    # garbage types fall back to no trim
+    assert J.clean_window({"start": "x", "end": None}, 60.0) == (0.0, 0.0)
+    assert J.clean_window({}, 60.0) == (0.0, 0.0)
+
+
 def test_clean_hashtags_caps_at_five_keeping_order():
     many = [f"#tag{i}" for i in range(20)]
     out = J.clean_hashtags(many)

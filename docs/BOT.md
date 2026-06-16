@@ -13,7 +13,10 @@ caps at 50 MB).
 ## How a clip flows
 
 1. You send a video **as a file**. **Claude watches sampled frames and
-   proposes captions** (subject + ideas are messaged to you). Nothing
+   proposes captions** (subject + ideas are messaged to you). For screen
+   recordings it also **auto-detects the content window** — trimming a
+   recorder-UI intro (OBS &c.) and the post-quit outro the motion analysis
+   can't see — and pre-fills the trim (shown in setup, adjustable). Nothing
    renders yet.
 2. A **setup screen** appears. You pick the caption — tap an idea, *type
    your own*, or **🚫 No caption** — and flip the options you want before

@@ -297,6 +297,85 @@ def suggest_post(video: str, duration: float, caption: str = "") -> dict:
             "hashtags": clean_hashtags(reply.get("hashtags", []))}
 
 
+WINDOW_PROMPT = CREATOR_CONTEXT + """
+You are a TikTok editor topping-and-tailing a SCREEN RECORDING down to
+just the part worth posting. Each frame is labelled with its timestamp in
+seconds (the t…s in the filename).
+
+Frames sampled in order from the {duration:.0f}s source:
+{frames}
+
+Find the CONTENT window — the span of the actual demonstration — and cut
+the dead edges. Things that are NOT content and should be trimmed off:
+- the screen-recording / streaming app itself at the start or end (e.g.
+  OBS Studio, with its preview panels, scene list and Start/Stop Recording
+  buttons) — the creator alt-tabs to it to start and stop the capture;
+- a long idle gap before the real app/terminal is actually used;
+- trailing frames after the thing being demonstrated has closed (the app
+  quit, a help dump, an empty prompt, the recorder UI reappearing).
+
+Report, in SOURCE seconds:
+- start: when the real demonstration begins (the app/terminal in use).
+- end: the last meaningful content frame, BEFORE it closes / the recorder
+  returns.
+
+Be conservative — keep ALL of the real demo; only cut clearly-irrelevant
+recorder UI or dead time. If the whole clip is already content, return
+0 and {duration:.0f}.
+
+Reply with ONLY a JSON object, no other text:
+{{"start": <seconds>, "end": <seconds>, "reason": "<short>"}}
+"""
+
+MIN_CONTENT_SEC = 5.0   # never auto-trim a clip down below this
+MAX_EDGE_FRACTION = 0.5  # nor cut more than half off either edge
+
+
+def clean_window(reply: dict, duration: float) -> tuple[float, float]:
+    """Turn Claude's {start,end} into safe (trim_start, trim_end) seconds.
+
+    Clamps to the clip, refuses nonsense or over-aggressive cuts, and
+    returns (0.0, 0.0) — no trim — whenever the answer can't be trusted.
+    """
+    try:
+        start = float(reply.get("start", 0) or 0)
+        end = float(reply.get("end", duration) or duration)
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+    start = max(0.0, min(start, duration))
+    end = max(0.0, min(end, duration))
+    if end - start < MIN_CONTENT_SEC:
+        return 0.0, 0.0  # implausible window — keep the whole clip
+    trim_start = round(start, 1)
+    trim_end = round(duration - end, 1)
+    cap = duration * MAX_EDGE_FRACTION
+    if trim_start > cap or trim_end > cap:
+        return 0.0, 0.0  # too aggressive to trust — leave it to the creator
+    return trim_start, trim_end
+
+
+def detect_content_window(video: str, duration: float) -> tuple[float, float]:
+    """Auto-detect the recorder-UI / dead edges of a screen recording.
+
+    Returns (trim_start, trim_end) seconds to hard-cut so the edit opens on
+    the real demo and ends before it closes — e.g. dropping an OBS intro
+    and the post-quit frames. Best-effort: returns (0.0, 0.0) on any
+    failure or when the whole clip already looks like content. Raises
+    JudgeUnavailable only via run_claude (the caller treats it as
+    best-effort).
+    """
+    tmp = tempfile.mkdtemp(prefix="remy_window_")
+    try:
+        frames = extract_frames(
+            video, spread_times(duration, n=12, margin=0.0), tmp)
+        prompt = WINDOW_PROMPT.format(
+            frames="\n".join(frames), duration=duration)
+        reply = parse_json_obj(run_claude(prompt))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return clean_window(reply, duration)
+
+
 MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight
 
 
