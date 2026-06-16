@@ -170,15 +170,18 @@ armed by the repo variable `TOKCUT_DEPLOY=enabled` + `VPS_*` secrets and
 skipped otherwise. Server setup: `deploy/bootstrap.sh`, runbook
 `docs/DEPLOY.md`.
 
-**Brand vs. infra:** the project rebranded `tokcut` → `remy` (package,
-CLI `remy`/`remy-bot`, `REMY_*` env vars). The **live VPS deployment
-deliberately keeps the `tokcut` names** — `/opt/tokcut`, the `tokcut-bot`
-systemd unit, `/etc/tokcut/env`, the `TOKCUT_DEPLOY` repo variable, the
-CI deploy job, and `deploy/*` — so the running bot survives the rename.
-Two safety nets bridge it: legacy `tokcut`/`tokcut-bot` console-script
-aliases in `pyproject.toml`, and `TOKCUT_*` env-var fallback in
-`bot/config.py` + `music.py`. Migrate the box to the `remy` names at
-leisure (see `docs/DEPLOY.md`).
+**Brand vs. infra:** the project rebranded `tokcut` → `remy` everywhere —
+package, CLI `remy`/`remy-bot`, `REMY_*` env vars, AND the deploy kit
+(`/opt/remy`, the `remy-bot`/`remy-botapi`/`remy-gc` units, `/etc/remy/env`,
+the `REMY_DEPLOY` repo variable, `deploy/remy-bot.service`). An
+already-running `tokcut` box is migrated in place by
+`deploy/migrate-to-remy.sh` (idempotent: moves dirs, transforms the
+installed units, rewrites the env file, reinstalls the venv). Two backward
+-compat shims remain so a half-migrated or pre-rebrand box still works:
+legacy `tokcut`/`tokcut-bot` console-script aliases in `pyproject.toml`,
+and `TOKCUT_*` env-var fallback in `bot/config.py` + `music.py`. The CI
+deploy is gated on `REMY_DEPLOY` (a fresh variable), so it stays dormant
+until you arm it post-migration — no broken auto-deploy in the meantime.
 
 ## Reproduce the sample result
 

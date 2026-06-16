@@ -39,17 +39,18 @@ jobs:
       - name: Test
         run: pytest
 
-  # VPS deploy — armed by the repo variable TOKCUT_DEPLOY=enabled
+  # VPS deploy — armed by the repo variable REMY_DEPLOY=enabled
   # (Settings → Secrets and variables → Actions → Variables) plus the
   # VPS_HOST / VPS_USER / VPS_SSH_KEY secrets. Until those exist this
-  # job is skipped. Server prep: deploy/bootstrap.sh (see docs/DEPLOY.md).
+  # job is skipped. Server prep: deploy/bootstrap.sh (see docs/DEPLOY.md);
+  # an already-running tokcut box migrates with deploy/migrate-to-remy.sh.
   deploy:
     needs: test
     runs-on: ubuntu-latest
     if: >-
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
-      vars.TOKCUT_DEPLOY == 'enabled'
+      vars.REMY_DEPLOY == 'enabled'
     concurrency: deploy            # never two deploys at once
     steps:
       - name: Deploy to VPS over SSH
@@ -60,7 +61,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
           script: |
-            cd /opt/tokcut
+            cd /opt/remy
             git fetch origin main
             git reset --hard origin/main
             venv/bin/pip install -q -e ".[bot]"
@@ -73,11 +74,11 @@ jobs:
             # NB: plain `[ … ] && break` exits 1 under script_stop/set -e
             # when the marker exists; `if` is strict-mode safe.
             for i in $(seq 1 60); do
-              if [ ! -f ~/.tokcut/work/.rendering ]; then
+              if [ ! -f ~/.remy/work/.rendering ]; then
                 break
               fi
               echo "render in progress, waiting ($i/60)…"
               sleep 20
             done
-            sudo /usr/bin/systemctl restart tokcut-bot
-            systemctl --no-pager --lines=0 status tokcut-bot
+            sudo /usr/bin/systemctl restart remy-bot
+            systemctl --no-pager --lines=0 status remy-bot

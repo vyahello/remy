@@ -1,4 +1,4 @@
-# Local Telegram Bot API server (tokcut step 5).
+# Local Telegram Bot API server (remy step 5).
 #
 # The standard cloud Bot API caps file up/downloads at 50 MB; a full iPhone
 # HEVC clip is ~250 MB. Running your own telegram-bot-api lifts that to 2 GB
@@ -9,7 +9,7 @@
 #    @BotFather token at runtime.
 # 2. Put them in .env (gitignored).
 # 3. Start it:  docker compose -f docker-compose.botapi.yml up -d
-# 4. Point the bot at it:  TOKCUT_BOT_API_URL=http://127.0.0.1:8081
+# 4. Point the bot at it:  REMY_BOT_API_URL=http://127.0.0.1:8081
 #    and run the bot on the SAME host so it shares the volume below.
 #
 # The bot and this server must share a filesystem at the SAME absolute path:
@@ -21,7 +21,7 @@
 services:
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
-    container_name: tokcut-bot-api
+    container_name: remy-bot-api
     restart: unless-stopped
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID:?set TELEGRAM_API_ID in .env}

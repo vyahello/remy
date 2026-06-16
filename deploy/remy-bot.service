@@ -1,24 +1,24 @@
-# systemd unit for the tokcut Telegram bot.
-# Installed by deploy/bootstrap.sh to /etc/systemd/system/tokcut-bot.service
+# systemd unit for the remy Telegram bot.
+# Installed by deploy/bootstrap.sh to /etc/systemd/system/remy-bot.service
 #
-#   sudo systemctl enable --now tokcut-bot
-#   journalctl -u tokcut-bot -f
+#   sudo systemctl enable --now remy-bot
+#   journalctl -u remy-bot -f
 
 [Unit]
-Description=tokcut Telegram bot (auto TikTok editor)
-Documentation=https://github.com/vyahello/tokcut
+Description=remy Telegram bot (auto TikTok editor)
+Documentation=https://github.com/vyahello/remy
 # the local Bot API container should be up first (docker compose)
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=tokcut
-Group=tokcut
-WorkingDirectory=/opt/tokcut
+User=remy
+Group=remy
+WorkingDirectory=/opt/remy
 # secrets live outside the repo — see deploy/env.example
-EnvironmentFile=/etc/tokcut/env
-ExecStart=/opt/tokcut/venv/bin/tokcut-bot
+EnvironmentFile=/etc/remy/env
+ExecStart=/opt/remy/venv/bin/remy-bot
 Restart=on-failure
 RestartSec=5
 
@@ -44,7 +44,7 @@ MemorySwapMax=256M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/opt/tokcut /home/tokcut /var/lib/telegram-bot-api
+ReadWritePaths=/opt/remy /home/remy /var/lib/telegram-bot-api
 
 [Install]
 WantedBy=multi-user.target

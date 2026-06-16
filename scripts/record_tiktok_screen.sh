@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # record_tiktok_screen.sh — capture a vertical slice of your X11 screen as a
-# pristine 1080x1920 (9:16) clip, ready to drop into tokcut.
+# pristine 1080x1920 (9:16) clip, ready to drop into remy.
 #
 # Your display is landscape and can't supply a native 1080x1920 region, so
 # this grabs the tallest true-portrait 9:16 column from the center of the
@@ -9,7 +9,7 @@
 #
 # Quality: visually-lossless 10-bit 4:4:4 H.264 (CRF 14) by default — looks
 # identical to the source, keeps text crisp, stays realtime at 60fps, and is
-# re-encoded by tokcut afterward anyway. No audio (tokcut mutes by default;
+# re-encoded by remy afterward anyway. No audio (remy mutes by default;
 # add a TikTok sound in-app).
 #
 # Usage:
@@ -115,12 +115,12 @@ finalize() {
     fi
     echo
     echo "✅ saved $out  ($(du -h "$out" | cut -f1))"
-    echo "   edit it:  venv/bin/python3 -m tokcut \"$out\" -c \"Your caption ⚡\" -o edited.mp4"
+    echo "   edit it:  venv/bin/python3 -m remy \"$out\" -c \"Your caption ⚡\" -o edited.mp4"
 }
 trap finalize EXIT
 
 cat <<INFO
-🎬 tokcut screen recorder
+🎬 remy screen recorder
    display     : $DISPLAY_ID
    capture     : ${cap_w}x${cap_h} at +${off_x},+${off_y}  (native 9:16 slice)
    output      : ${OUT_W}x${OUT_H} @ ${FPS}fps  (lanczos-scaled)
