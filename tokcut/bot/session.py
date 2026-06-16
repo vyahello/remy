@@ -57,6 +57,8 @@ class EditSession:
     awaiting_feedback: bool = False
     past_captions: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)  # rendered revisions
+    post_kit: str = ""  # cached TikTok post copy; only re-asked on a
+    #                     content change (caption text / length / framing)
 
     def summary(self) -> str:
         p = self.params
@@ -246,6 +248,15 @@ def fallback_updates(feedback: str, params: EditParams) -> dict:
         return {"target": base * 0.8}
     if "long" in low:
         return {"target": base * 1.2}
+    if any(w in low for w in ("bottom", "lower", "move it down", "on my hand",
+                              "over the keyboard", "below")):
+        return {"caption_pos": "bottom"}
+    if any(w in low for w in ("at the top", "move it up", "higher",
+                              "black bar")):
+        return {"caption_pos": "top"}
+    if any(w in low for w in ("clear spot", "out of the way", "off the text",
+                              "calmest")):
+        return {"caption_pos": "auto"}
     if any(w in low for w in ("wider", "zoom out", "too close",
                               "show more")):
         return {"zoom": params.zoom / ZOOM_STEP}

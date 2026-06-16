@@ -329,8 +329,14 @@ async def _render_guard(workdir: str, lock: asyncio.Lock):
 
 
 async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
-                              session: EditSession) -> None:
-    """Render the session's current state and deliver with the keyboard."""
+                              session: EditSession,
+                              refresh_post: bool = True) -> None:
+    """Render the session's current state and deliver with the keyboard.
+
+    `refresh_post` re-asks Claude for the TikTok post copy. It's True on a
+    fresh clip and whenever a change alters what the video shows; a pure
+    placement / music / audio tweak reuses the cached copy (no double-job).
+    """
     cfg: BotConfig = context.application.bot_data["config"]
     lock: asyncio.Lock = context.application.bot_data["render_lock"]
     if lock.locked():
@@ -391,17 +397,18 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
             return
         session.outputs.append(out)  # tracked for cleanup on approve
 
-        post_kit = ""
-        if cfg.claude_judge and claude_available():
+        need_post = refresh_post or not session.post_kit
+        if cfg.claude_judge and claude_available() and need_post:
             await status.edit_text(
                 f"✍️ Take {rev} is cut — writing the TikTok post copy…")
             try:
                 duration = (await asyncio.to_thread(probe, out))["duration"]
                 post = await asyncio.to_thread(
                     suggest_post, out, duration, session.caption)
-                post_kit = format_post_kit(post)
+                session.post_kit = format_post_kit(post)
             except Exception as exc:  # noqa: BLE001 — best-effort
                 log.warning("post copy failed: %s", exc)
+        post_kit = session.post_kit
 
         session.history.append(f"r{rev}: {session.summary()}")
         size_mb = os.path.getsize(out) / 1048576
@@ -702,9 +709,16 @@ async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
                 "different wording.")
         return
 
+    # The post copy is grounded in what the frames show, so only re-ask
+    # Claude when the change alters that: caption wording, length, or
+    # framing. Moving the caption, swapping music/audio, or recolouring
+    # leave the description + hashtags identical — reuse the cached copy.
+    refresh_post = bool(
+        {"caption", "target", "hook", "crop", "zoom"} & updates.keys())
+
     note = f"{reply_note}\n" if reply_note else ""
     await msg.reply_text(note + "🔧 Dialing in: " + ", ".join(changes))
-    await _render_and_deliver(msg, context, session)
+    await _render_and_deliver(msg, context, session, refresh_post=refresh_post)
 
 
 def build_application(cfg: BotConfig) -> Application:

@@ -15,10 +15,6 @@ TOP_PAD = 30
 # is the description / music ticker / username — captions live between.
 SAFE_TOP, SAFE_BOTTOM = 0.08, 0.78
 
-# Auto placement keeps the caption in the top half of the frame so it
-# stays clear of the main action (which sits lower in most clips).
-CAP_MAX_Y = int(0.5 * OUT_H)
-
 
 def hook_card_y() -> int:
     """Top-of-frame y for the animated hook card, inside the safe zone."""
@@ -42,17 +38,18 @@ def auto_caption_y(
     cx0 = ((OUT_W - cap_w) // 2) // gs
     cx1 = ((OUT_W + cap_w) // 2) // gs
     y_lo = int(SAFE_TOP * OUT_H) + 10
-    # Keep the caption in the upper part of the frame: the main action
-    # (typing, the demo) almost always lives in the lower two-thirds, so
-    # cap the search at mid-frame and only dodge *downward* within that
-    # top band when the very top is itself busy.
-    y_hi = min(int(SAFE_BOTTOM * OUT_H), CAP_MAX_Y) - cap_h
+    # Search the WHOLE safe zone for the calmest band. Screens glow, so on a
+    # phone clip of a laptop the bright content scores high and the caption
+    # settles on the dark, still region below (the keyboard, a hand) — never
+    # over the text being typed. The mild top bias is only a tie-breaker: a
+    # uniformly calm frame (even lighting, no busy region) still rides high
+    # on the black bar, but a busy top decisively pushes the caption down.
+    y_hi = int(SAFE_BOTTOM * OUT_H) - cap_h
     best_y, best_score = y_lo, float("inf")
     for y in range(y_lo, max(y_lo + 1, y_hi), 16):
         band = canvas[y // gs:(y + cap_h) // gs, cx0:cx1]
         score = float(band.mean())
-        # strong bias toward the top — only move down to clear real content
-        score += 0.30 * (y - y_lo) / max(1, y_hi - y_lo)
+        score += 0.06 * (y - y_lo) / max(1, y_hi - y_lo)
         if score < best_score:
             best_score, best_y = score, y
     return best_y

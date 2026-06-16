@@ -139,6 +139,18 @@ def test_fallback_zoom():
                             p) == {"zoom": 1.0 / ZOOM_STEP}
 
 
+def test_fallback_caption_placement():
+    from tokcut.bot.session import EditParams
+    p = EditParams()
+    assert fallback_updates("move the caption on my hand",
+                            p) == {"caption_pos": "bottom"}
+    assert fallback_updates("put it lower", p) == {"caption_pos": "bottom"}
+    assert fallback_updates("move it up to the black bar",
+                            p) == {"caption_pos": "top"}
+    assert fallback_updates("find a clear spot for it",
+                            p) == {"caption_pos": "auto"}
+
+
 # ------------------------------------------------------------- tweaks
 
 def test_tweak_updates_length():

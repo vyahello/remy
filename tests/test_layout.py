@@ -53,8 +53,20 @@ def test_auto_clear_frame_sits_at_top():
     assert lay["cap_y"] <= int(L.SAFE_TOP * L.OUT_H) + 30
 
 
-def test_auto_never_drops_below_mid_frame():
+def test_auto_uniform_busy_frame_sits_at_top():
     cap_h = 200
-    sal = np.ones((100, 60), np.float32)  # everything busy — bias decides
+    sal = np.ones((100, 60), np.float32)  # uniformly busy — tie-break decides
     lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
-    assert lay["cap_y"] + cap_h <= L.CAP_MAX_Y
+    assert lay["cap_y"] <= int(L.SAFE_TOP * L.OUT_H) + 30
+
+
+def test_auto_drops_onto_calm_bottom():
+    # the IMG_2110 case: bright/active laptop screen fills the top, the dark
+    # keyboard + hand is calm below — the caption must leave the top half and
+    # settle on that calm lower band ("on my hand"), not over the screen text.
+    cap_h = 200
+    sal = np.zeros((100, 60), np.float32)
+    sal[:60, :] = 1.0  # top 60% of the video is the glowing, busy screen
+    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
+    assert lay["cap_y"] > L.OUT_H // 2
+    assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)

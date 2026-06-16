@@ -62,11 +62,13 @@ edited clip ready to post (see `docs/IDEAS.md`).
 6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
    renders purple bold-italic on rounded white boxes + color emoji. A
    saliency map (brightness-dominant, because screens glow in dark-room
-   footage) places it over the calmest region in the **top half** of the
-   TikTok safe zone (`layout.CAP_MAX_Y`): a strong top bias keeps the
-   caption high and clear of the main action below, dropping down only
-   when the very top is itself busy. `caption.check_caption` warns about
-   wording that risks TikTok moderation.
+   footage) places it over the calmest region across the **whole** TikTok
+   safe zone (`auto_caption_y`): a mild top bias only breaks ties, so a
+   uniformly calm frame rides high on the black bar, but a busy/bright top
+   (a laptop screen filling the upper frame) pushes the caption down onto
+   the still region below — the dark keyboard, a hand — never over the
+   text being typed. `caption.check_caption` warns about wording that risks
+   TikTok moderation.
 7. **Audio** — muted by default (the export is silent so a TikTok sound is
    added in-app; `render` emits `-an`). `--keep-audio` retains the original
    ambient track; `--music` (`music.generate`) synthesizes a royalty-free

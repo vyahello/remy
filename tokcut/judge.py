@@ -299,7 +299,14 @@ Available settings:
 - target: output length in seconds (10-120); shorter = faster pacing.
   Unset means automatic (a TikTok-friendly ~30s solved from the
   content) — only set it when the creator asks about length/pacing
-- caption_pos: "auto" (calmest spot), "top", "bottom"
+- caption_pos: WHERE the on-video caption sits — "auto" (the editor finds
+  the calmest empty region by itself), "top", or "bottom". Map ALL
+  placement feedback here and ONLY here: "lower"/"move it down"/"on my
+  hand"/"over the keyboard"/"at the bottom"/"below the screen" → "bottom";
+  "higher"/"move it up"/"on the black bar"/"at the top" → "top"; "find a
+  clear spot"/"out of the way"/"off the text" → "auto". A request about
+  WHERE the caption goes must change caption_pos and NOTHING else — never
+  reword, regenerate, or touch the caption text for a placement request
 - style: caption look — "purple" (purple on white, the default),
   "yellow" (black on yellow), "black" (white on black)
 - hook: cold-open teaser of the best beat (true/false)
@@ -326,7 +333,9 @@ Reply with ONLY a JSON object, null for anything that should not change:
  "music_bpm": null, "new_music_mix": false,
  "reply": "<one short line telling the creator what you'll change>"}}
 
-Change only what the feedback implies — when in doubt, change less.
+Change only what the feedback implies — when in doubt, change less. One
+piece of feedback usually maps to ONE setting; do not change settings the
+creator didn't mention (e.g. moving the caption never alters its text).
 """
 
 
