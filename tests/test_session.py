@@ -151,22 +151,26 @@ def test_fallback_caption_placement():
                             p) == {"caption_pos": "auto"}
 
 
-def test_post_copy_stale_only_on_visible_content_change():
+def test_post_copy_stale_only_on_content_change():
     from remy.bot.session import post_copy_stale
-    # changes to what the frames show -> regenerate the TikTok post copy
-    assert post_copy_stale({"caption": "new"})
-    assert post_copy_stale({"target": 30.0})
-    assert post_copy_stale({"crop": True})
-    assert post_copy_stale({"zoom": 1.3})
-    assert post_copy_stale({"hook": True})
+    # only a trim cuts content in/out -> regenerate the TikTok post copy
     assert post_copy_stale({"trim_start": 3.0})
     assert post_copy_stale({"trim_end": 2.0})
-    # placement / look / music / audio don't change description+hashtags
+    # accepts a set of changed keys too (the redo staging path)
+    assert post_copy_stale({"trim_end", "zoom"})
+    # length / framing / caption / look / music / audio leave the subject
+    # unchanged -> reuse the cached copy (no wasteful regeneration)
+    assert not post_copy_stale({"caption": "new"})
+    assert not post_copy_stale({"target": 30.0})
+    assert not post_copy_stale({"crop": True})
+    assert not post_copy_stale({"zoom": 1.3})
+    assert not post_copy_stale({"hook": True})
     assert not post_copy_stale({"caption_pos": "bottom"})
     assert not post_copy_stale({"style": "yellow"})
     assert not post_copy_stale({"music_style": "phonk"})
     assert not post_copy_stale({"keep_audio": True})
     assert not post_copy_stale({})
+    assert not post_copy_stale(set())
 
 
 def test_validate_and_apply_trim():

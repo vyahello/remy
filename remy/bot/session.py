@@ -63,7 +63,11 @@ class EditSession:
     past_captions: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)  # rendered revisions
     post_kit: str = ""  # cached TikTok post copy; only re-asked on a
-    #                     content change (caption text / length / framing)
+    #                     content change (a trim that cuts what's shown)
+    # Redo staging: buttons stack changes here instead of rendering each
+    # tap, so several tweaks ("longer + tighter + zoom off") render once.
+    staged_keys: set[str] = field(default_factory=set)   # validated keys
+    staged_notes: list[str] = field(default_factory=list)  # human changes
 
     def summary(self) -> str:
         p = self.params
@@ -210,18 +214,21 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     return changes
 
 
-# Validated-update keys that change what the rendered frames actually show.
-# The TikTok post copy is grounded in those frames, so only these warrant
-# re-asking Claude for it — a pure placement / music / audio tweak reuses
-# the cached copy (no redundant round-trip).
-POST_COPY_KEYS = frozenset({"caption", "target", "hook", "crop", "zoom",
-                            "trim_start", "trim_end"})
+# Validated-update keys that change *what the video is about* — the only
+# thing the TikTok post copy (an educational blurb + hashtags grounded in
+# the subject) actually depends on. Only a trim cuts content in or out;
+# length, framing (zoom/crop), the on-video caption, cold open, look and
+# music all leave the subject untouched, so they reuse the cached copy
+# (no wasteful regeneration — the user explicitly flagged that double-job).
+POST_COPY_KEYS = frozenset({"trim_start", "trim_end"})
 
 
-def post_copy_stale(updates: dict) -> bool:
-    """True if a validated update changes the video's visible content, so the
-    cached TikTok post copy must be regenerated."""
-    return bool(POST_COPY_KEYS & updates.keys())
+def post_copy_stale(updates) -> bool:
+    """True if a change alters what the video is about (a trim), so the
+    cached TikTok post copy must be regenerated. Accepts a dict of updates
+    or any iterable of changed keys."""
+    keys = updates.keys() if isinstance(updates, dict) else set(updates)
+    return bool(POST_COPY_KEYS & keys)
 
 
 def tweak_updates(key: str, params: EditParams) -> dict:

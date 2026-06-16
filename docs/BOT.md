@@ -36,19 +36,24 @@ caps at 50 MB).
    attached to the reply, ready to paste into the TikTok caption box.
 5. The finished `.mp4` comes back as a **document** (no recompression)
    with the post copy and [✅ Approve] [🔁 Redo] buttons.
-6. **Redo**: a quick-tap keyboard (two buttons per row, so nothing is
-   clipped on iPhone) covers the common tweaks — ⚡ shorter, 🐢 longer,
-   🔎 tighter / 🔭 wider framing, ✂️ trim intro / ✂️ trim outro (1s per
-   tap), 🪝 cold open on/off, 🔍 zoom on/off, ✨ look on/off, 🥁 phonk /
-   🎹 synthwave, 🔥 faster / 🧊 slower beat, 🎲 new mix, 🔇 no music, plus
-   ✍️ new caption and 🎨 next style on vertical clips. Buttons apply
-   instantly (no Claude round-trip). And **chat is always on**: any text
-   you send while a clip is in session counts as feedback — no Redo tap
-   needed. "make it more zoomed", "caption at the top", "cut the first 3
-   seconds", "end when btop closes" — Claude maps it to settings (validated
-   and clamped in Python). The next take arrives with the same buttons.
-   Sessions remember history and rejected captions, so regenerated
-   captions don't repeat.
+6. **Redo**: a **staging panel** (two buttons per row, so nothing is
+   clipped on iPhone). Each tweak **stacks** a change instead of rendering
+   — ⚡ shorter, 🐢 longer, 🔎 tighter / 🔭 wider framing, ✂️ trim intro /
+   ✂️ trim outro (1s per tap), 🪝 cold open on/off, 🔍 zoom on/off, ✨ look
+   on/off, 🥁 phonk / 🎹 synthwave, 🔥 faster / 🧊 slower beat, 🎲 new mix,
+   🔇 no music, plus ✍️ new caption and 🎨 next style on vertical clips. The
+   panel header shows what's stacked; tap **🎬 Render** once to apply them
+   all together — so "longer + tighter + zoom off" is three taps and one
+   render, not three separate takes. Stacking is instant (no Claude
+   round-trip). And **chat is always on**: any text you send renders
+   straight away (carrying anything you'd already stacked) — "make it more
+   zoomed", "shorter and tighter, drop the zoom", "cut the first 3 seconds"
+   — Claude maps it to settings (validated and clamped in Python). The next
+   take arrives with the same panel. Sessions remember history and rejected
+   captions, so regenerated captions don't repeat.
+   The paste-ready TikTok copy is only **regenerated when a trim changes
+   what the video shows** — length, framing, caption, look and music reuse
+   the cached copy, so a redo doesn't needlessly rewrite the description.
 7. **Approve cleans up**: tapping ✅ deletes the downloaded original and
    every rendered revision from the workdir (they already live in
    Telegram). Sending a new clip likewise clears any abandoned session,

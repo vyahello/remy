@@ -54,6 +54,7 @@ log = logging.getLogger("remy.bot")
 
 APPROVE = "approve"
 REDO = "redo"
+REDORENDER = "redorender"  # render the changes stacked in the redo panel
 TWEAK = "tweak:"
 # setup-phase (pre-render picker) callbacks
 SETCAP = "setcap:"   # pick caption idea i
@@ -155,8 +156,32 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def redo_text(session: EditSession) -> str:
+    """Header above the redo panel: how it works + current state + the
+    changes stacked so far (so the user sees what Render will apply)."""
+    p = session.params
+    n = session.revision + 1
+    length = "auto" if p.target is None else f"~{p.target:.0f}s"
+    now = (f"now: length {length} · zoom {p.zoom:.2f}x · "
+           f"crop {'on' if p.crop else 'off'} · cold open "
+           f"{'on' if p.hook else 'off'} · look "
+           f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}")
+    if p.trim_start or p.trim_end:
+        now += f" · trim −{p.trim_start:.0f}s/−{p.trim_end:.0f}s"
+    if session.staged_notes:
+        staged = "\n📝 *staged:* " + ", ".join(session.staged_notes)
+    else:
+        staged = "\n📝 nothing staged yet"
+    return (
+        f"🎬 *Take {n}* — stack as many tweaks as you like, then tap "
+        "*🎬 Render*.\n_Or just type what to change in your own words._\n"
+        f"{now}{staged}")
+
+
 def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
-    """Quick-tap tweaks; free text always works as well.
+    """Staging panel: each tweak stacks a change (it does *not* render);
+    the top **🎬 Render** button applies everything stacked in one take.
+    Free text always works too.
 
     Laid out two buttons per row — three-wide rows get clipped on the
     right edge on iPhone, so every row holds at most two.
@@ -184,6 +209,12 @@ def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
         btn("🎲 New mix", "remix"), btn("🔇 No music", "nomusic"),
     ]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    # the render trigger sits on top, labelled with how much is stacked
+    n = session.revision + 1
+    cnt = len(session.staged_notes)
+    tail = f" ({cnt} change{'' if cnt == 1 else 's'})" if cnt else ""
+    rows.insert(0, [InlineKeyboardButton(
+        f"🎬 Render take {n}{tail}", callback_data=REDORENDER)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -231,8 +262,10 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*3. Review the take*\n"
         "📋 It arrives with paste-ready TikTok copy (blurb + hashtags).\n"
         "✅ *Approve* — done; working files are cleaned up.\n"
-        "🔁 *Redo* — tap a quick tweak or *type what to change*: "
-        "_\"shorter\", \"zoom in tighter\", \"add phonk music\"_.\n\n"
+        "🔁 *Redo* — opens a panel: *stack* as many quick tweaks as you "
+        "want (shorter + tighter + zoom off…), then tap *🎬 Render* once. "
+        "Or *type what to change* and it renders straight away: "
+        "_\"shorter and tighter, drop the zoom\"_.\n\n"
         "*Commands*\n"
         "/status — render queue, current take, disk\n"
         "/start — short hello\n"
@@ -602,19 +635,33 @@ async def on_button(update, context: ContextTypes.DEFAULT_TYPE) -> None:
             + note)
     elif query.data == REDO:
         session.awaiting_feedback = True
+        # fresh staging session — nothing stacked yet
+        session.staged_keys.clear()
+        session.staged_notes.clear()
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
-            f"🎬 Take {session.revision + 1} — tap a tweak, or just type "
-            "what should change in your own words:",
+            redo_text(session), parse_mode="Markdown",
             reply_markup=redo_keyboard(session))
     elif query.data.startswith(TWEAK):
-        session.awaiting_feedback = False
         raw = tweak_updates(query.data.removeprefix(TWEAK), session.params)
         if not raw:
             await query.message.reply_text(
                 "🤷 That tweak isn't available here.")
             return
-        await _apply_and_render(query.message, context, session, raw)
+        await _stage_tweak(query, session, raw)
+    elif query.data == REDORENDER:
+        if not session.staged_notes:
+            await query.message.reply_text(
+                "🤷 Nothing stacked yet — tap a tweak first, or ✅ Approve "
+                "the take as is.")
+            return
+        session.awaiting_feedback = False
+        refresh_post = post_copy_stale(session.staged_keys)
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _render_and_deliver(query.message, context, session,
+                                  refresh_post=refresh_post)
+        session.staged_keys.clear()
+        session.staged_notes.clear()
     elif query.data.startswith(SETCAP):
         idx = int(query.data.removeprefix(SETCAP))
         if 0 <= idx < len(session.caption_choices):
@@ -648,6 +695,52 @@ async def _refresh_setup(query, session: EditSession) -> None:
         await query.edit_message_text(
             setup_text(session), parse_mode="Markdown",
             reply_markup=setup_keyboard(session))
+
+
+async def _refresh_redo(query, session: EditSession) -> None:
+    """Re-draw the redo staging panel in place after a tweak is stacked."""
+    with contextlib.suppress(Exception):  # "message not modified" is fine
+        await query.edit_message_text(
+            redo_text(session), parse_mode="Markdown",
+            reply_markup=redo_keyboard(session))
+
+
+async def _resolve_caption_updates(msg, session: EditSession,
+                                   updates: dict) -> None:
+    """Turn a caption request into a usable `caption` in `updates`, in place.
+
+    `regenerate_caption` needs a Claude round-trip; an explicit caption is
+    run past the moderation check. Shared by the staging buttons and the
+    free-text feedback path so both behave identically.
+    """
+    if updates.pop("regenerate_caption", False) and "caption" not in updates:
+        await msg.reply_text("✍️ Writing a fresh caption…")
+        avoid = [*session.past_captions, session.caption]
+        new_caption, _ = await _claude_caption(msg, session.source, avoid)
+        if new_caption:
+            updates["caption"] = new_caption
+    if "caption" in updates:
+        bad = check_caption(updates["caption"])
+        for warning in bad:
+            await msg.reply_text(f"⚠️ caption check: {warning}")
+        if bad:
+            updates.pop("caption")
+
+
+async def _stage_tweak(query, session: EditSession, raw: dict) -> None:
+    """Apply a quick-tap tweak to the session but *don't* render — stack it
+    on the redo panel so several tweaks render together in one take."""
+    msg = query.message
+    updates = validate_updates(raw)
+    await _resolve_caption_updates(msg, session, updates)
+    changes = apply_updates(session, updates)
+    if not changes:
+        await msg.reply_text(
+            "🤝 Already set that way — pick another tweak or tap 🎬 Render.")
+        return
+    session.staged_keys |= updates.keys()
+    session.staged_notes.extend(changes)
+    await _refresh_redo(query, session)
 
 
 async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -711,29 +804,19 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
                             session: EditSession, raw: dict,
                             reply_note: str = "") -> None:
-    """Validate raw updates, apply them, and render the next take.
+    """Validate raw updates, apply them, and render the next take — folding
+    in anything already stacked on the redo panel.
 
-    Shared by free-text feedback (Claude-interpreted) and the quick-tap
-    tweak buttons — validate_updates stays the hard gate for both.
+    Free text renders straight away (a typed request is a complete intent);
+    it carries any button tweaks stacked beforehand, since those already
+    live in `session.params`. validate_updates stays the hard gate.
     """
     updates = validate_updates(raw)
-
-    if updates.pop("regenerate_caption", False) and "caption" not in updates:
-        await msg.reply_text("✍️ Writing a fresh caption…")
-        avoid = [*session.past_captions, session.caption]
-        new_caption, _ = await _claude_caption(msg, session.source, avoid)
-        if new_caption:
-            updates["caption"] = new_caption
-
-    if "caption" in updates:
-        bad = check_caption(updates["caption"])
-        for warning in bad:
-            await msg.reply_text(f"⚠️ caption check: {warning}")
-        if bad:
-            updates.pop("caption")
+    await _resolve_caption_updates(msg, session, updates)
 
     changes = apply_updates(session, updates)
-    if not changes:
+    all_changes = session.staged_notes + changes
+    if not all_changes:
         if updates:
             await msg.reply_text(
                 "🤝 It's already set that way — the take wouldn't "
@@ -744,14 +827,16 @@ async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
                 "different wording.")
         return
 
-    # The post copy is grounded in what the frames show, so only re-ask
-    # Claude when the change alters that (caption wording, length, framing);
-    # moving the caption or swapping music/audio reuses the cached copy.
-    refresh_post = post_copy_stale(updates)
+    # Post copy describes what the video is about, so only re-ask Claude
+    # when the content shown changes (a trim) — here or in stacked tweaks.
+    session.staged_keys |= updates.keys()
+    refresh_post = post_copy_stale(session.staged_keys)
 
     note = f"{reply_note}\n" if reply_note else ""
-    await msg.reply_text(note + "🔧 Dialing in: " + ", ".join(changes))
+    await msg.reply_text(note + "🔧 Dialing in: " + ", ".join(all_changes))
     await _render_and_deliver(msg, context, session, refresh_post=refresh_post)
+    session.staged_keys.clear()
+    session.staged_notes.clear()
 
 
 def build_application(cfg: BotConfig) -> Application:
