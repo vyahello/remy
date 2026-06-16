@@ -41,9 +41,11 @@ jobs:
 
   # VPS deploy — armed by the repo variable REMY_DEPLOY=enabled
   # (Settings → Secrets and variables → Actions → Variables) plus the
-  # VPS_HOST / VPS_USER / VPS_SSH_KEY secrets. Until those exist this
-  # job is skipped. Server prep: deploy/bootstrap.sh (see docs/DEPLOY.md);
-  # an already-running tokcut box migrates with deploy/migrate-to-remy.sh.
+  # VPS_HOST / VPS_USER / VPS_SSH_KEY / VPS_APP_DIR secrets (the app dir
+  # is a secret so the server path never appears in the repo or the logs).
+  # Until those exist this job is skipped. Server prep: deploy/bootstrap.sh
+  # (see docs/DEPLOY.md); a running tokcut box migrates with
+  # deploy/migrate-to-remy.sh.
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -61,7 +63,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
           script: |
-            cd /opt/remy
+            cd "${{ secrets.VPS_APP_DIR }}"
             git fetch origin main
             git reset --hard origin/main
             venv/bin/pip install -q -e ".[bot]"

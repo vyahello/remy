@@ -68,7 +68,9 @@ In the GitHub repo settings:
 
 - **Secrets** (Actions → Secrets): `VPS_HOST`, `VPS_USER` (the service
   user), `VPS_SSH_KEY` (a dedicated private key; put its `.pub` in the
-  service user's `~/.ssh/authorized_keys` on the VPS).
+  service user's `~/.ssh/authorized_keys` on the VPS), and `VPS_APP_DIR`
+  (the deploy checkout path, e.g. `/opt/remy`) — kept as a secret so the
+  server layout never appears in the workflow file or the build logs.
 - **Variable** (Actions → Variables): `REMY_DEPLOY` = `enabled`.
 
 From then on every push to `main` that passes ruff + mypy + pytest is
