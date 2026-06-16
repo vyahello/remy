@@ -139,7 +139,8 @@ bot's persona) takes it from there:
    own, or go caption-free — and flip the options you want (cold open,
    zoom, look, music) in a setup screen. Length is auto; tap **🎬 Render**.
 2. The edit comes back as a clean file with **paste-ready TikTok copy** —
-   a fun blurb + the 5 most relevant hashtags, grounded only in what the
+   a precise, actionable blurb (what it teaches + how to use it) + the 5
+   most relevant hashtags, grounded only in what the
    video actually shows — plus **✅ Approve / 🔁 Redo**.
 3. **Redo in plain words** ("shorter", "move the caption on my hand", "add
    phonk music"). Claude maps it to settings — and a placement request just

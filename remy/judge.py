@@ -196,9 +196,11 @@ def suggest_caption(
 
 
 POST_PROMPT = CREATOR_CONTEXT + """
-You are the creator writing the post copy for a finished TikTok video.
-This is paste-ready text for the TikTok caption box — NOT an on-video
-overlay and NOT a review.
+You are the creator writing the TikTok caption for a finished EDUCATIONAL
+tech video. This is paste-ready text for the TikTok caption box — NOT an
+on-video overlay and NOT a review. Every video teaches a concrete tip,
+trick, tool, or workflow; the caption's job is to make a scroller
+understand WHAT they'll learn and HOW they could use it themselves.
 
 Read (view) these frames, sampled in chronological order from the
 FINISHED video:
@@ -206,22 +208,37 @@ FINISHED video:
 
 {caption_note}
 
-Produce two things, both STRICTLY grounded in what the frames actually
-show — never invent a tool, feature, result, or step that is not
-visible. Identify the exact app/tool/language from on-screen text.
+First work out, strictly from what the frames SHOW (never invent a tool,
+feature, command, result, or step that is not visible): the exact
+tool/app/language (read it off the on-screen text), and the single useful
+takeaway a viewer could go and apply.
 
-1. description — one or two short, fun sentences (max ~150 chars) that
-   say what the viewer is watching. Energetic but accurate; at most two
-   emoji. No hashtags inside it.
+Then produce two things:
+
+1. description — the teaching caption. ONE or TWO short, clean sentences
+   (aim ~120 chars, hard max ~200). Requirements:
+   - LEAD with the takeaway or the benefit, framed so the viewer knows
+     how to use it: name the tool and what it does FOR them
+     ("`btop` gives you a live, color system monitor in the terminal —
+     run it to watch CPU, RAM and processes at a glance").
+   - Be specific and precise: real tool/command/feature names from the
+     frames, not vague hype ("check this out", "so cool", "game changer"
+     are banned). No clickbait, no exaggeration, no fake urgency.
+   - Make it actionable when the video shows a usable step: the verb the
+     viewer would do (install / run / add / replace / try), grounded only
+     in what's on screen — don't invent commands.
+   - Plain, natural, confident English. At most ONE emoji, at the end.
+     No hashtags inside the description.
 2. hashtags — EXACTLY 5 tags (TikTok ranks the first few; more dilutes
    reach), lowercase, no spaces, each starting with '#'. Order by
-   relevance, most specific first: the actual tool/topic the video is
-   about, then one or two broader reach tags (#coding #tech). Every tag
-   must genuinely match what's shown. No sensational or policy-risky tags
+   relevance, most specific first: the actual tool/topic, then the
+   language/domain, then ONE broad educational-reach tag that genuinely
+   fits (#tutorial #howto #coding #tech #learnontiktok). Every tag must
+   match what's shown. No sensational or policy-risky tags
    (no hack/exploit/attack/etc.).
 
 Reply with ONLY a JSON object, no other text:
-{{"description": "<the fun, accurate description>",
+{{"description": "<the precise, useful teaching caption>",
  "hashtags": ["#tag1", "#tag2", "..."]}}
 """
 

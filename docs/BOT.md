@@ -3,7 +3,8 @@
 Status: **step 5** — the full loop on a local Bot API server. Send a clip,
 Claude proposes captions, you pick the caption and options in a setup
 screen and tap **🎬 Render**, the bot renders the 1080x1920 edit, Claude
-writes paste-ready TikTok post copy (a fun blurb + relevant hashtags), and
+writes paste-ready TikTok post copy (an actionable blurb — what it teaches
++ how to use it — plus relevant hashtags), and
 the file arrives with that copy and **[✅ Approve] [🔁 Redo]** buttons. Tap Redo and say what to change in your own words — Claude maps it
 onto the editor's settings and a new revision is rendered. With the optional
 local Bot API server, full ~250 MB iPhone clips go through (the cloud API
@@ -26,7 +27,8 @@ caps at 50 MB).
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
 4. **Claude writes the TikTok post copy** from the rendered frames — a
-   short fun description plus the 5 most relevant hashtags, grounded only in what
+   precise, actionable description — what the video teaches and how a
+   viewer can use it — plus the 5 most relevant hashtags, grounded only in what
    the video shows (no invented features) and moderation-filtered. It's
    attached to the reply, ready to paste into the TikTok caption box.
 5. The finished `.mp4` comes back as a **document** (no recompression)
