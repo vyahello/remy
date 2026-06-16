@@ -191,6 +191,19 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     return changes
 
 
+# Validated-update keys that change what the rendered frames actually show.
+# The TikTok post copy is grounded in those frames, so only these warrant
+# re-asking Claude for it — a pure placement / music / audio tweak reuses
+# the cached copy (no redundant round-trip).
+POST_COPY_KEYS = frozenset({"caption", "target", "hook", "crop", "zoom"})
+
+
+def post_copy_stale(updates: dict) -> bool:
+    """True if a validated update changes the video's visible content, so the
+    cached TikTok post copy must be regenerated."""
+    return bool(POST_COPY_KEYS & updates.keys())
+
+
 def tweak_updates(key: str, params: EditParams) -> dict:
     """Map a quick-tap tweak button onto raw setting updates.
 

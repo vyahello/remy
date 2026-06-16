@@ -44,6 +44,7 @@ from .session import (
     apply_updates,
     cleanup_files,
     fallback_updates,
+    post_copy_stale,
     tweak_updates,
     validate_updates,
 )
@@ -712,11 +713,9 @@ async def _apply_and_render(msg, context: ContextTypes.DEFAULT_TYPE,
         return
 
     # The post copy is grounded in what the frames show, so only re-ask
-    # Claude when the change alters that: caption wording, length, or
-    # framing. Moving the caption, swapping music/audio, or recolouring
-    # leave the description + hashtags identical — reuse the cached copy.
-    refresh_post = bool(
-        {"caption", "target", "hook", "crop", "zoom"} & updates.keys())
+    # Claude when the change alters that (caption wording, length, framing);
+    # moving the caption or swapping music/audio reuses the cached copy.
+    refresh_post = post_copy_stale(updates)
 
     note = f"{reply_note}\n" if reply_note else ""
     await msg.reply_text(note + "🔧 Dialing in: " + ", ".join(changes))

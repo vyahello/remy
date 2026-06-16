@@ -9,15 +9,21 @@ reviewing the rendered result.
 """
 
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 from .caption import MAX_CAPTION_CHARS, check_caption
 
+log = logging.getLogger(__name__)
+
 CLAUDE_TIMEOUT_SEC = 240
+CLAUDE_ATTEMPTS = 2       # one retry on a transient failure
+CLAUDE_RETRY_WAIT = 2.0   # seconds between attempts
 FRAME_WIDTH = 640
 N_FRAMES = 6
 
@@ -76,14 +82,35 @@ def pick_valid_caption(candidates: list[str]) -> str | None:
 # ----------------------------------------------------------------- claude
 
 def run_claude(prompt: str,
-               timeout: int = CLAUDE_TIMEOUT_SEC) -> str:
+               timeout: int = CLAUDE_TIMEOUT_SEC,
+               attempts: int = CLAUDE_ATTEMPTS) -> str:
     """Run Claude Code headless; return its final text reply.
 
     Auth comes from the environment: CLAUDE_CODE_OAUTH_TOKEN (subscription
     token from `claude setup-token`) or an existing `claude` login.
+
+    Retries once on a transient failure (timeout / non-zero exit /
+    unparseable output) — a single network blip shouldn't drop the caption
+    or post copy to the fallback. A missing CLI is permanent, not retried.
     """
     if not claude_available():
         raise JudgeUnavailable("claude CLI not found on PATH")
+    last_exc: JudgeUnavailable | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return _run_claude_once(prompt, timeout)
+        except JudgeUnavailable as exc:
+            last_exc = exc
+            if attempt < attempts:
+                log.warning("claude attempt %d/%d failed (%s); retrying",
+                            attempt, attempts, exc)
+                time.sleep(CLAUDE_RETRY_WAIT)
+    assert last_exc is not None  # the loop ran at least once
+    raise last_exc
+
+
+def _run_claude_once(prompt: str, timeout: int) -> str:
+    """One headless `claude -p` invocation. Raises JudgeUnavailable."""
     cmd = ["claude", "-p", prompt,
            "--output-format", "json",
            "--allowedTools", "Read"]

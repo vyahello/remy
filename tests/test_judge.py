@@ -54,6 +54,37 @@ def test_run_claude_unavailable(monkeypatch):
         J.run_claude("hi")
 
 
+def test_run_claude_retries_then_succeeds(monkeypatch):
+    monkeypatch.setattr(J, "claude_available", lambda: True)
+    monkeypatch.setattr(J.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def flaky(prompt, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise J.JudgeUnavailable("transient blip")
+        return "recovered"
+
+    monkeypatch.setattr(J, "_run_claude_once", flaky)
+    assert J.run_claude("hi") == "recovered"
+    assert calls["n"] == 2  # failed once, retried once
+
+
+def test_run_claude_gives_up_after_attempts(monkeypatch):
+    monkeypatch.setattr(J, "claude_available", lambda: True)
+    monkeypatch.setattr(J.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def always_fail(prompt, timeout):
+        calls["n"] += 1
+        raise J.JudgeUnavailable("still down")
+
+    monkeypatch.setattr(J, "_run_claude_once", always_fail)
+    with pytest.raises(J.JudgeUnavailable, match="still down"):
+        J.run_claude("hi")
+    assert calls["n"] == J.CLAUDE_ATTEMPTS
+
+
 # ----------------------------------------------------------- post copy
 
 def test_clean_hashtags_normalizes_and_dedupes():
