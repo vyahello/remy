@@ -67,3 +67,15 @@ def test_saliency_map_shape_and_range():
     assert sal.shape == (40, 30)
     assert sal.min() >= 0.0
     assert sal.max() <= 1.0 + 1e-6
+
+
+def test_saliency_map_flags_motion_at_equal_brightness():
+    # top band flickers 50<->150 over time (high motion, mean 100); bottom
+    # band is a constant 100 (same brightness, no motion). Motion-aware
+    # placement must score the moving band higher so the caption avoids it.
+    t, h, w = 20, 40, 30
+    frames = np.full((t, h, w), 100, dtype=np.uint8)
+    frames[::2, :h // 2, :] = 50
+    frames[1::2, :h // 2, :] = 150
+    sal = A.saliency_map(frames)
+    assert sal[:h // 2].mean() > sal[h // 2:].mean() + 0.2

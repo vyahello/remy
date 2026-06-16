@@ -64,13 +64,24 @@ def motion_scores(
 
 
 def saliency_map(frames: np.ndarray) -> np.ndarray:
-    """Where the action lives, averaged over the video.
+    """Where to keep a caption OFF, per pixel, over the whole video.
 
-    Brightness dominates: in dark-room desk footage the content the
-    viewer must see (screen, device display) is what glows.
+    Three cues, each a reason not to cover a region:
+    - **temporal motion** — where pixels CHANGE (typing, scrolling, a
+      moving hand). Both the average change and the per-pixel PEAK change
+      count, so a spot that's busy only while you type still reads as
+      active instead of being averaged away over a mostly-still clip.
+    - **brightness** — in dark-room desk footage the content the viewer
+      must see (a screen, a device display) is what glows.
+    - **edges** — fine detail like on-screen text.
+
+    Motion and brightness are weighted co-equally so the caption avoids
+    what's *changing* as much as what's *bright* — it settles on the
+    region that is both still and dark.
     """
     f = frames.astype(np.float32)
-    motion = np.abs(np.diff(f, axis=0)).mean(axis=0)
+    diff = np.abs(np.diff(f, axis=0))
+    motion = 0.6 * diff.mean(axis=0) + 0.4 * diff.max(axis=0)
     mean_frame = f.mean(axis=0)
     gy, gx = np.gradient(mean_frame)
     edges = np.hypot(gx, gy)
@@ -79,7 +90,7 @@ def saliency_map(frames: np.ndarray) -> np.ndarray:
         m = np.percentile(a, 98)
         return np.clip(a / m, 0, 1) if m > 0 else a
 
-    return 0.3 * norm(motion) + 0.2 * norm(edges) + 0.5 * norm(mean_frame)
+    return 0.4 * norm(motion) + 0.15 * norm(edges) + 0.45 * norm(mean_frame)
 
 
 def smooth(scores: np.ndarray) -> np.ndarray:
