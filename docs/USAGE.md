@@ -1,15 +1,15 @@
-# Using tokcut
+# Using remy
 
 ## Quick start
 
 ```bash
 cd ~/tkprop
-tokcut YOUR_CLIP.MOV -c "Your caption text ⚡"      # if pip-installed
+remy YOUR_CLIP.MOV -c "Your caption text ⚡"      # if pip-installed
 # or, without installing:
-venv/bin/python3 -m tokcut YOUR_CLIP.MOV -c "Your caption text ⚡"
+venv/bin/python3 -m remy YOUR_CLIP.MOV -c "Your caption text ⚡"
 ```
 
-Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
+Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 `-o out.mp4`.
 
 ## Options
@@ -17,7 +17,7 @@ Output lands next to the input as `YOUR_CLIP_tokcut.mp4` unless you pass
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-c / --caption` | — | Persistent caption (optional). Emoji supported (⚡🔥🧪💻…). Auto-balanced onto two lines. Omit it for a clean vertical export with no baked caption. **Landscape sources never get a caption** — see below. |
-| `-o / --output` | `<input>_tokcut.mp4` | Output path. |
+| `-o / --output` | `<input>_remy.mp4` | Output path. |
 | `--target` | `auto` | Output length. `auto` (default) solves a TikTok-friendly length: natural pacing ≤35s is kept, longer compresses toward the ~30s completion-rate sweet spot — floored by the real-time action, which is never sped up. A number solves for ≈ N seconds; `none` keeps base tier speeds (dead 3.2x, lag 1.7x, action 1x). |
 | `--style` | `purple` | Caption look: `purple` (purple bold-italic on white — the house style), `yellow` (black on yellow), `black` (white on black). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region across the **whole** TikTok safe zone — a mild top bias only breaks ties, so a calm frame rides high on the black bar while a bright/busy top (e.g. a laptop screen) pushes the caption down onto the still region below (a dark keyboard, a hand), never over the content. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
@@ -44,9 +44,9 @@ the first frames, not just raw footage.
 
 ```bash
 # reuse the caption text as the card
-tokcut clip.MOV -c "How I set this up ⚡" --hook-card
+remy clip.MOV -c "How I set this up ⚡" --hook-card
 # different words on the card than the persistent caption
-tokcut clip.MOV -c "btop — terminal system monitor" \
+remy clip.MOV -c "btop — terminal system monitor" \
   --hook-card --hook-card-text "I replaced my system monitor"
 ```
 
@@ -93,7 +93,7 @@ beat-aligned cuts. Differences:
 
 1. **Dry run first** to sanity-check the cut plan:
    ```bash
-   venv/bin/python3 -m tokcut clip.MOV -c "..." --target 50 --dry-run
+   venv/bin/python3 -m remy clip.MOV -c "..." --target 50 --dry-run
    ```
    You'll see which time ranges are kept at 1x (ACTION) vs fast-forwarded.
 2. If the plan looks too aggressive/too soft, adjust `--target`
@@ -137,12 +137,12 @@ Two opt-outs when you want sound baked in:
 ### TikTok eligibility (avoid getting flagged or shadowbanned)
 
 TikTok OCRs on-screen text, and its moderation penalizes sensational or
-policy-sensitive wording. `tokcut` warns automatically (`check_caption`)
+policy-sensitive wording. `remy` warns automatically (`check_caption`)
 about risky terms — heed the warnings:
 
 - **Terms it flags by default**: hack/hacking/hacker, attack, exploit,
   deauth, crack, bypass, payload, spy, jam, steal, "free wifi". (Edit
-  `RISKY_TERMS` in `tokcut/caption.py` to fit your own content.)
+  `RISKY_TERMS` in `remy/caption.py` to fit your own content.)
 - **Prefer descriptive over edgy** — phrasing that plainly says what's
   happening is safe; clickbait that implies wrongdoing risks removal.
 - The same applies to the description and hashtags you type when posting:
@@ -151,7 +151,7 @@ about risky terms — heed the warnings:
 ## Recording a screen clip (local helper)
 
 `scripts/record_tiktok_screen.sh` captures an X11 screen straight into a
-pristine **1080x1920** source ready for tokcut. Your laptop screen is
+pristine **1080x1920** source ready for remy. Your laptop screen is
 landscape, so it grabs the tallest centered **9:16 column** and upscales it
 to 1080x1920 with lanczos — arrange the app you're filming in the middle of
 the screen. Default quality is **visually-lossless 10-bit 4:4:4 H.264**
@@ -171,7 +171,7 @@ just rename it to `.mp4`.) Tune via env
 vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
 `PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
 grab an exact rectangle instead of the auto 9:16 column). It then prints the
-`tokcut` command to edit the result. X11 only (Wayland: use `wf-recorder`).
+`remy` command to edit the result. X11 only (Wayland: use `wf-recorder`).
 
 ## Quality notes
 

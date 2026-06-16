@@ -1,6 +1,6 @@
 """Tests for the redo-session state and parameter validation."""
 
-from tokcut.bot.session import (
+from remy.bot.session import (
     EditSession,
     apply_updates,
     cleanup_files,
@@ -98,8 +98,8 @@ def test_apply_style_change():
 
 def test_cleanup_removes_source_and_outputs(tmp_path):
     src = tmp_path / "clip.mov"
-    r1 = tmp_path / "clip_tokcut_r1.mp4"
-    r2 = tmp_path / "clip_tokcut_r2.mp4"
+    r1 = tmp_path / "clip_remy_r1.mp4"
+    r2 = tmp_path / "clip_remy_r2.mp4"
     for f in (src, r1, r2):
         f.write_bytes(b"x" * 100)
     s = EditSession(source=str(src), file_name="clip.mov", caption="c",
@@ -124,7 +124,7 @@ def test_cleanup_tolerates_missing_files(tmp_path):
 # ------------------------------------------------------------- fallback
 
 def test_fallback_shorter_longer():
-    from tokcut.bot.session import EditParams
+    from remy.bot.session import EditParams
     p = EditParams(target=50.0)
     assert fallback_updates("make it shorter", p) == {"target": 40.0}
     assert fallback_updates("a bit longer please", p) == {"target": 60.0}
@@ -132,7 +132,7 @@ def test_fallback_shorter_longer():
 
 
 def test_fallback_zoom():
-    from tokcut.bot.session import ZOOM_STEP, EditParams
+    from remy.bot.session import ZOOM_STEP, EditParams
     p = EditParams()
     assert fallback_updates("zoom in closer", p) == {"zoom": ZOOM_STEP}
     assert fallback_updates("too close, show more",
@@ -140,7 +140,7 @@ def test_fallback_zoom():
 
 
 def test_fallback_caption_placement():
-    from tokcut.bot.session import EditParams
+    from remy.bot.session import EditParams
     p = EditParams()
     assert fallback_updates("move the caption on my hand",
                             p) == {"caption_pos": "bottom"}
@@ -154,21 +154,21 @@ def test_fallback_caption_placement():
 # ------------------------------------------------------------- tweaks
 
 def test_tweak_updates_length():
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.bot.session import EditParams, tweak_updates
     p = EditParams(target=40.0)
     assert tweak_updates("shorter", p) == {"target": 32.0}
     assert tweak_updates("longer", p) == {"target": 50.0}
 
 
 def test_tweak_updates_auto_target_uses_sweet_spot():
-    from tokcut.analysis import AUTO_SWEET
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.analysis import AUTO_SWEET
+    from remy.bot.session import EditParams, tweak_updates
     p = EditParams()  # target None = auto
     assert tweak_updates("shorter", p) == {"target": AUTO_SWEET * 0.8}
 
 
 def test_tweak_updates_toggles_and_music():
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.bot.session import EditParams, tweak_updates
     p = EditParams()
     assert tweak_updates("hook", p) == {"hook": True}  # default off → on
     assert tweak_updates("crop", p) == {"crop": False}
@@ -177,7 +177,7 @@ def test_tweak_updates_toggles_and_music():
 
 
 def test_tweak_updates_zoom_dial():
-    from tokcut.bot.session import ZOOM_STEP, EditParams, tweak_updates
+    from remy.bot.session import ZOOM_STEP, EditParams, tweak_updates
     p = EditParams()
     assert tweak_updates("tighter", p) == {"zoom": ZOOM_STEP}
     assert tweak_updates("wider", p) == {"zoom": 1.0 / ZOOM_STEP}
@@ -202,8 +202,8 @@ def test_apply_zoom_describes_direction():
 
 
 def test_tweak_updates_style_cycles():
-    from tokcut.bot.session import EditParams, tweak_updates
-    from tokcut.caption import STYLES
+    from remy.bot.session import EditParams, tweak_updates
+    from remy.caption import STYLES
     order = list(STYLES)
     p = EditParams(style=order[0])
     assert tweak_updates("style", p) == {"style": order[1]}
@@ -212,12 +212,12 @@ def test_tweak_updates_style_cycles():
 
 
 def test_tweak_updates_unknown_key():
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.bot.session import EditParams, tweak_updates
     assert tweak_updates("explode", EditParams()) == {}
 
 
 def test_tweaks_pass_validation():
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.bot.session import EditParams, tweak_updates
     p = EditParams(target=15.0)
     for key in ("shorter", "longer", "tighter", "wider", "hook", "crop",
                 "phonk", "synthwave", "faster", "slower", "remix",
@@ -229,7 +229,7 @@ def test_tweaks_pass_validation():
 # ------------------------------------------------------- music tempo/mix
 
 def test_tweak_faster_slower_sets_bpm_and_enables_music():
-    from tokcut.bot.session import EditParams, default_bpm, tweak_updates
+    from remy.bot.session import EditParams, default_bpm, tweak_updates
     p = EditParams()  # music off
     up = tweak_updates("faster", p)
     assert up["music"] == "phonk"                  # enabled so it's audible
@@ -240,7 +240,7 @@ def test_tweak_faster_slower_sets_bpm_and_enables_music():
 
 
 def test_tweak_remix_bumps_mix():
-    from tokcut.bot.session import EditParams, tweak_updates
+    from remy.bot.session import EditParams, tweak_updates
     assert tweak_updates("remix", EditParams(music_style="phonk")) == {
         "new_music_mix": True}
     # off -> also enable
@@ -257,7 +257,7 @@ def test_validate_music_bpm_clamps():
 
 
 def test_apply_music_bpm_and_mix():
-    from tokcut.bot.session import EditParams, EditSession
+    from remy.bot.session import EditParams, EditSession
     s = EditSession(source="x", file_name="x.mp4", caption="c",
                     params=EditParams(music_style="phonk"))
     ch = apply_updates(s, {"music_bpm": 150})
@@ -269,7 +269,7 @@ def test_apply_music_bpm_and_mix():
 
 
 def test_fallback_music_tempo_and_mix():
-    from tokcut.bot.session import EditParams, default_bpm
+    from remy.bot.session import EditParams, default_bpm
     p = EditParams(music_style="phonk", music_bpm=None)
     assert fallback_updates("make the music faster", p)["music_bpm"] > \
         default_bpm("phonk")

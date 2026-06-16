@@ -3,7 +3,7 @@
 Format-level tactics that apply to any vertical clip — tutorials, vlogs,
 screen recordings, builds, process videos — plus the product roadmap.
 
-## Format playbook (what tokcut already does + what to add)
+## Format playbook (what remy already does + what to add)
 
 1. **Hook in the first 1.5 s** — never open on a static, low-energy frame.
    *Idea (next version):* `--hook` flag that finds the highest-motion or
@@ -52,7 +52,7 @@ file, review, approve or redo.
 
 ```
 phone ──(video file, NOT photo-compressed)──> Telegram bot (python-telegram-bot)
-   bot downloads file → runs tokcut → sends result back as *document*
+   bot downloads file → runs remy → sends result back as *document*
 ```
 
 **Conversation flow:**
@@ -60,7 +60,7 @@ phone ──(video file, NOT photo-compressed)──> Telegram bot (python-teleg
 ```
 1. Upload raw clip (as file/document)
 2. Bot analyses it fully automatically:
-     - motion edit plan (tokcut)
+     - motion edit plan (remy)
      - caption text (vision model reads the frames and proposes one)
      - caption position (saliency auto-placement, already implemented)
      - eligibility check (check_caption) before render
@@ -96,7 +96,7 @@ The bot should eventually set music too. Two realities to balance:
 
 Plan:
 
-1. Keep the built-in synthesized tracks (`tokcut.music`, zero copyright
+1. Keep the built-in synthesized tracks (`remy.music`, zero copyright
    risk) and optionally maintain a small library of royalty-free tracks
    tagged by BPM and mood.
 2. Bot picks a track matching the clip duration/energy and mixes it under

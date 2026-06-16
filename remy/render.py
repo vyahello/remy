@@ -429,7 +429,7 @@ def _render_segmented(
     """
     fps = min(60, round(src["fps"]))
     want_ambient = src["audio"] and (bool(music_path) or keep_audio)
-    tmp = tempfile.mkdtemp(prefix="tokcut_seg_")
+    tmp = tempfile.mkdtemp(prefix="remy_seg_")
     try:
         # --- pass 1: each segment -> a fully-formatted intermediate ---
         parts: list[str] = []

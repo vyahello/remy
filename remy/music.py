@@ -5,7 +5,7 @@ copyright risk, exact-length to the clip.
 
 Three quality tiers, best available wins:
 1. **SoundFont instruments** (`tinysoundfont` + a General MIDI .sf2,
-   found via TOKCUT_SOUNDFONT or the usual system paths): the
+   found via REMY_SOUNDFONT or the usual system paths): the
    composition is played by real sampled instruments — choir, strings
    and piano for phonk, polysynth/saw-lead/synth-bass for synthwave,
    a real drum kit — with the synthesized 808 sub, cowbell riff and
@@ -100,14 +100,16 @@ SF_PREFERENCE = ("fluidr3", "generaluser", "musescore", "timgm")
 
 
 def find_soundfont() -> str | None:
-    """Locate a General MIDI .sf2, best-quality first (TOKCUT_SOUNDFONT
-    wins outright)."""
-    env = os.environ.get("TOKCUT_SOUNDFONT", "")
+    """Locate a General MIDI .sf2, best-quality first (REMY_SOUNDFONT,
+    or the legacy TOKCUT_SOUNDFONT, wins outright)."""
+    env = (os.environ.get("REMY_SOUNDFONT")
+           or os.environ.get("TOKCUT_SOUNDFONT", ""))
     if env and os.path.exists(env):
         return env
     hits: list[str] = []
     for pattern in ("/usr/share/sounds/sf2/*.sf2",
                     "/usr/share/soundfonts/*.sf2",
+                    os.path.expanduser("~/.remy/*.sf2"),
                     os.path.expanduser("~/.tokcut/*.sf2")):
         hits += glob.glob(pattern)
     if not hits:

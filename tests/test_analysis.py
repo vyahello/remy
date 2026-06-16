@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tokcut import analysis as A
+from remy import analysis as A
 
 
 def test_classify_three_tiers():

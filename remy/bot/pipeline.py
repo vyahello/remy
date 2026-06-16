@@ -1,6 +1,6 @@
 """Deterministic helpers the bot runs in-process — no Telegram, no Claude.
 
-Thin wrappers over tokcut's analysis plus small pure helpers for the bot.
+Thin wrappers over remy's analysis plus small pure helpers for the bot.
 The actual editing goes through cli.edit() (run in a worker thread by
 app.py); in step 3 Claude Code takes over the caption wording.
 """
@@ -130,5 +130,5 @@ def delivery_name(file_name: str | None, rev: int) -> str:
     stem = os.path.splitext(file_name or "")[0]
     stem = re.sub(r"[^\w\- ]", "", stem).strip().replace(" ", "_")
     if not stem:
-        stem = f"tokcut_{datetime.date.today():%Y-%m-%d}"
+        stem = f"remy_{datetime.date.today():%Y-%m-%d}"
     return f"{stem}_take{rev}.mp4"

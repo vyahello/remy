@@ -48,7 +48,7 @@ from .session import (
     validate_updates,
 )
 
-log = logging.getLogger("tokcut.bot")
+log = logging.getLogger("remy.bot")
 
 APPROVE = "approve"
 REDO = "redo"
@@ -239,7 +239,7 @@ async def status_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     lock: asyncio.Lock = context.application.bot_data["render_lock"]
     session = _session(context, update.message.chat_id)
-    lines = ["🎛️ *tokcut status*",
+    lines = ["🎛️ *remy status*",
              f"render: {'🔴 busy' if lock.locked() else '🟢 idle'}"]
     if session is None:
         lines.append("session: none — send a clip 🎬")
@@ -373,7 +373,7 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
 
         p = session.params
         base = os.path.splitext(os.path.basename(session.source))[0]
-        out = os.path.join(cfg.workdir, f"{base}_tokcut_r{rev}.mp4")
+        out = os.path.join(cfg.workdir, f"{base}_remy_r{rev}.mp4")
         try:
             await asyncio.to_thread(
                 edit, session.source, session.caption,
@@ -477,7 +477,7 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         log.exception("download failed")
         hint = (
             f"Files over {cfg.max_file_mb} MB exceed the standard Bot API "
-            "cap — set TOKCUT_BOT_API_URL to a local Bot API server (see "
+            "cap — set REMY_BOT_API_URL to a local Bot API server (see "
             "docs/BOT.md)." if not cfg.local_mode else
             f"The local Bot API server caps files at {cfg.max_file_mb} MB."
         )
@@ -780,7 +780,7 @@ def main() -> None:
     app = build_application(cfg)
     api = (f"local Bot API ({cfg.bot_api_base_url}, ≤2 GB)"
            if cfg.local_mode else "cloud Bot API (≤50 MB)")
-    log.info("tokcut bot starting (user=%s, workdir=%s, api=%s)",
+    log.info("remy bot starting (user=%s, workdir=%s, api=%s)",
              cfg.allowed_user_id, cfg.workdir, api)
     app.run_polling()
 

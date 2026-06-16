@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from tokcut import analysis as A
-from tokcut.render import color_args
+from remy import analysis as A
+from remy.render import color_args
 
 SRC_HLG = {"w": 1038, "h": 1616, "duration": 95.5, "fps": 60,
            "audio": True, "transfer": "arib-std-b67", "primaries": "bt2020"}

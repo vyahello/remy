@@ -2,7 +2,7 @@
 
 import pytest
 
-from tokcut import judge as J
+from remy import judge as J
 
 
 def test_spread_times_even_and_bounded():

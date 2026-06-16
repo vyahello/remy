@@ -3,7 +3,7 @@ import wave
 
 import numpy as np
 
-from tokcut import music as M
+from remy import music as M
 
 
 def test_generate_length_and_range():
@@ -41,7 +41,7 @@ def test_write_wav_roundtrip(tmp_path):
 
 
 def test_style_bpm_defaults():
-    from tokcut.music import STYLE_BPM, generate
+    from remy.music import STYLE_BPM, generate
     assert STYLE_BPM["phonk"] > STYLE_BPM["synthwave"]
     # bpm=None resolves to the style default and still renders
     track = generate(2.0, style="phonk")
@@ -49,7 +49,7 @@ def test_style_bpm_defaults():
 
 
 def test_phonk_differs_from_explicit_slow_bpm():
-    from tokcut.music import generate
+    from remy.music import generate
     fast = generate(2.0, style="phonk")          # 132 default
     slow = generate(2.0, bpm=84, style="phonk")  # pinned slow
     assert not (fast == slow).all()
@@ -58,7 +58,7 @@ def test_phonk_differs_from_explicit_slow_bpm():
 def test_soundfont_env_override(tmp_path, monkeypatch):
     sf = tmp_path / "kit.sf2"
     sf.write_bytes(b"RIFF")
-    monkeypatch.setenv("TOKCUT_SOUNDFONT", str(sf))
+    monkeypatch.setenv("REMY_SOUNDFONT", str(sf))
     assert M.find_soundfont() == str(sf)
 
 

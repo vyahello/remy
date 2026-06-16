@@ -1,70 +1,89 @@
 import pytest
 
-from tokcut.bot.config import is_allowed, load_config
-from tokcut.bot.pipeline import derive_caption, format_plan
+from remy.bot.config import is_allowed, load_config
+from remy.bot.pipeline import derive_caption, format_plan
 
 
 def test_load_config_ok():
     cfg = load_config({"TELEGRAM_BOT_TOKEN": "tok",
-                       "TOKCUT_ALLOWED_USER_ID": "42"})
+                       "REMY_ALLOWED_USER_ID": "42"})
     assert cfg.telegram_token == "tok"
     assert cfg.allowed_user_id == 42
     assert cfg.default_target is None  # auto length
     assert cfg.claude_judge is True
 
 
+def test_load_config_legacy_tokcut_env_still_works():
+    # a server provisioned before the Remy rebrand sets TOKCUT_* — these
+    # must keep working as a fallback so deploys don't need an env rewrite
+    cfg = load_config({"TELEGRAM_BOT_TOKEN": "tok",
+                       "TOKCUT_ALLOWED_USER_ID": "42",
+                       "TOKCUT_TARGET": "45",
+                       "TOKCUT_CLAUDE": "off"})
+    assert cfg.allowed_user_id == 42
+    assert cfg.default_target == 45.0
+    assert cfg.claude_judge is False
+
+
+def test_load_config_remy_env_takes_precedence_over_legacy():
+    cfg = load_config({"TELEGRAM_BOT_TOKEN": "tok",
+                       "REMY_ALLOWED_USER_ID": "7",
+                       "TOKCUT_ALLOWED_USER_ID": "42"})
+    assert cfg.allowed_user_id == 7  # REMY_ wins when both are set
+
+
 def test_load_config_target_auto_and_explicit():
-    base = {"TELEGRAM_BOT_TOKEN": "t", "TOKCUT_ALLOWED_USER_ID": "1"}
-    assert load_config({**base, "TOKCUT_TARGET": "auto"}).default_target \
+    base = {"TELEGRAM_BOT_TOKEN": "t", "REMY_ALLOWED_USER_ID": "1"}
+    assert load_config({**base, "REMY_TARGET": "auto"}).default_target \
         is None
-    assert load_config({**base, "TOKCUT_TARGET": "45"}).default_target \
+    assert load_config({**base, "REMY_TARGET": "45"}).default_target \
         == 45.0
 
 
 def test_load_config_claude_off():
     cfg = load_config({"TELEGRAM_BOT_TOKEN": "tok",
-                       "TOKCUT_ALLOWED_USER_ID": "42",
-                       "TOKCUT_CLAUDE": "off"})
+                       "REMY_ALLOWED_USER_ID": "42",
+                       "REMY_CLAUDE": "off"})
     assert cfg.claude_judge is False
 
 
 def test_load_config_missing_token():
     with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN"):
-        load_config({"TOKCUT_ALLOWED_USER_ID": "42"})
+        load_config({"REMY_ALLOWED_USER_ID": "42"})
 
 
 def test_load_config_missing_user():
-    with pytest.raises(RuntimeError, match="TOKCUT_ALLOWED_USER_ID"):
+    with pytest.raises(RuntimeError, match="REMY_ALLOWED_USER_ID"):
         load_config({"TELEGRAM_BOT_TOKEN": "tok"})
 
 
 def test_load_config_bad_user_id():
     with pytest.raises(RuntimeError, match="integer"):
         load_config({"TELEGRAM_BOT_TOKEN": "tok",
-                     "TOKCUT_ALLOWED_USER_ID": "abc"})
+                     "REMY_ALLOWED_USER_ID": "abc"})
 
 
 def test_load_config_custom_target_and_workdir():
     cfg = load_config({
         "TELEGRAM_BOT_TOKEN": "t",
-        "TOKCUT_ALLOWED_USER_ID": "1",
-        "TOKCUT_TARGET": "40",
-        "TOKCUT_WORKDIR": "/tmp/x",
+        "REMY_ALLOWED_USER_ID": "1",
+        "REMY_TARGET": "40",
+        "REMY_WORKDIR": "/tmp/x",
     })
     assert cfg.default_target == 40.0
     assert cfg.workdir == "/tmp/x"
 
 
 def test_load_config_bad_target():
-    with pytest.raises(RuntimeError, match="TOKCUT_TARGET"):
+    with pytest.raises(RuntimeError, match="REMY_TARGET"):
         load_config({"TELEGRAM_BOT_TOKEN": "t",
-                     "TOKCUT_ALLOWED_USER_ID": "1",
-                     "TOKCUT_TARGET": "soon"})
+                     "REMY_ALLOWED_USER_ID": "1",
+                     "REMY_TARGET": "soon"})
 
 
 def test_load_config_no_local_mode_by_default():
     cfg = load_config({"TELEGRAM_BOT_TOKEN": "t",
-                       "TOKCUT_ALLOWED_USER_ID": "1"})
+                       "REMY_ALLOWED_USER_ID": "1"})
     assert cfg.local_mode is False
     assert cfg.bot_api_base_url == ""
     assert cfg.bot_api_base_file_url == ""
@@ -74,8 +93,8 @@ def test_load_config_no_local_mode_by_default():
 def test_load_config_local_bot_api():
     cfg = load_config({
         "TELEGRAM_BOT_TOKEN": "t",
-        "TOKCUT_ALLOWED_USER_ID": "1",
-        "TOKCUT_BOT_API_URL": "http://127.0.0.1:8081/",  # trailing slash
+        "REMY_ALLOWED_USER_ID": "1",
+        "REMY_BOT_API_URL": "http://127.0.0.1:8081/",  # trailing slash
     })
     assert cfg.local_mode is True
     assert cfg.bot_api_base_url == "http://127.0.0.1:8081/bot"
@@ -86,8 +105,8 @@ def test_load_config_local_bot_api():
 def test_load_config_bad_bot_api_url():
     with pytest.raises(RuntimeError, match="http"):
         load_config({"TELEGRAM_BOT_TOKEN": "t",
-                     "TOKCUT_ALLOWED_USER_ID": "1",
-                     "TOKCUT_BOT_API_URL": "127.0.0.1:8081"})
+                     "REMY_ALLOWED_USER_ID": "1",
+                     "REMY_BOT_API_URL": "127.0.0.1:8081"})
 
 
 def test_is_allowed():
@@ -121,7 +140,7 @@ def test_format_plan_renders_segments():
 
 
 def test_friendly_progress_translates_key_lines():
-    from tokcut.bot.pipeline import friendly_progress as fp
+    from remy.bot.pipeline import friendly_progress as fp
     plan = ("edit plan (8 segments, ~50.0s output):\n"
             "   72.15 -   73.45  HOOK   1.0x (cold open)")
     assert fp(plan) == "✂️ cutting to ~50s (8 pieces)"
@@ -134,37 +153,37 @@ def test_friendly_progress_translates_key_lines():
 
 
 def test_friendly_progress_hides_technical_lines():
-    from tokcut.bot.pipeline import friendly_progress as fp
+    from remy.bot.pipeline import friendly_progress as fp
     assert fp("source: 1920x1080  76.5s @ 60fps (bt709 transfer)") is None
     assert fp("caption at y=1277 (auto)") is None
     assert fp("   8.33 -   41.50  FAST  2.19x") is None
 
 
 def test_load_config_preset():
-    base = {"TELEGRAM_BOT_TOKEN": "t", "TOKCUT_ALLOWED_USER_ID": "1"}
+    base = {"TELEGRAM_BOT_TOKEN": "t", "REMY_ALLOWED_USER_ID": "1"}
     assert load_config(base).preset == "medium"
-    assert load_config({**base, "TOKCUT_PRESET": "fast"}).preset == "fast"
-    with pytest.raises(RuntimeError, match="TOKCUT_PRESET"):
-        load_config({**base, "TOKCUT_PRESET": "warp9"})
+    assert load_config({**base, "REMY_PRESET": "fast"}).preset == "fast"
+    with pytest.raises(RuntimeError, match="REMY_PRESET"):
+        load_config({**base, "REMY_PRESET": "warp9"})
 
 
 def test_delivery_name_uses_original_stem():
-    from tokcut.bot.pipeline import delivery_name
+    from remy.bot.pipeline import delivery_name
     assert delivery_name("gping demo.mp4", 2) == "gping_demo_take2.mp4"
 
 
 def test_delivery_name_falls_back_to_date():
     import datetime
 
-    from tokcut.bot.pipeline import delivery_name
+    from remy.bot.pipeline import delivery_name
     assert delivery_name("", 1) == (
-        f"tokcut_{datetime.date.today():%Y-%m-%d}_take1.mp4")
+        f"remy_{datetime.date.today():%Y-%m-%d}_take1.mp4")
 
 
 def test_sweep_workdir_removes_files_keeps_marker(tmp_path):
-    from tokcut.bot.pipeline import sweep_workdir
+    from remy.bot.pipeline import sweep_workdir
     (tmp_path / "clip.mp4").write_bytes(b"x" * 100)
-    (tmp_path / "clip_tokcut_r1.mp4").write_bytes(b"y" * 50)
+    (tmp_path / "clip_remy_r1.mp4").write_bytes(b"y" * 50)
     (tmp_path / ".rendering").write_text("123")
     (tmp_path / "subdir").mkdir()
     removed, freed = sweep_workdir(str(tmp_path))
@@ -176,15 +195,15 @@ def test_sweep_workdir_removes_files_keeps_marker(tmp_path):
 
 
 def test_sweep_workdir_missing_dir():
-    from tokcut.bot.pipeline import sweep_workdir
-    assert sweep_workdir("/nonexistent/tokcut/work") == (0, 0)
+    from remy.bot.pipeline import sweep_workdir
+    assert sweep_workdir("/nonexistent/remy/work") == (0, 0)
 
 
 # ------------------------------------------------------ setup-phase picker
 
 def _setup_session(vertical: bool, caption: str = "",
                    choices=("idea one", "idea two")):
-    from tokcut.bot.session import EditSession
+    from remy.bot.session import EditSession
     return EditSession(source="x.mp4", file_name="x.mp4", caption=caption,
                        vertical=vertical, caption_choices=list(choices))
 
@@ -194,10 +213,10 @@ def _datas(kb):
 
 
 def _app():
-    # tokcut.bot.app imports python-telegram-bot (the [bot] extra); skip the
+    # remy.bot.app imports python-telegram-bot (the [bot] extra); skip the
     # picker tests cleanly when only [dev] is installed.
     pytest.importorskip("telegram")
-    from tokcut.bot import app
+    from remy.bot import app
     return app
 
 
@@ -257,7 +276,7 @@ def test_format_post_kit_empty_returns_blank():
 
 
 def test_session_defaults_to_setup_phase_hook_off():
-    from tokcut.bot.session import EditParams, EditSession
+    from remy.bot.session import EditParams, EditSession
     assert EditParams().hook is False  # cold open opt-in
     s = EditSession(source="x", file_name="x", caption="")
     assert s.phase == "setup" and s.vertical is True

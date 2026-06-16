@@ -1,6 +1,6 @@
 import numpy as np
 
-from tokcut import render as R
+from remy import render as R
 
 
 def test_atempo_chain_simple():
@@ -278,7 +278,7 @@ def test_format_video_card_pushin_adds_base_scale():
 
 
 def test_dry_run_prints_hook_card_and_renders_nothing(monkeypatch):
-    from tokcut import cli
+    from remy import cli
     src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
            "duration": 20.0, "transfer": ""}
     monkeypatch.setattr(
@@ -321,7 +321,7 @@ def test_format_video_vertical_no_caption_no_overlay():
 
 
 def test_dry_run_vertical_no_caption_does_not_raise(monkeypatch):
-    from tokcut import cli
+    from remy import cli
     src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
            "duration": 20.0, "transfer": ""}
     monkeypatch.setattr(
@@ -329,7 +329,7 @@ def test_dry_run_vertical_no_caption_does_not_raise(monkeypatch):
         lambda *a, **k: (src, [(0, 2, 1.0), (2, 10, 2.0)], 8.0,
                          np.zeros((3, 4, 4)), None))
     out = cli.edit("in.mp4", "", dry_run=True, on_progress=lambda _l: None)
-    assert out.endswith("_tokcut.mp4")  # vertical + empty caption is allowed
+    assert out.endswith("_remy.mp4")  # vertical + empty caption is allowed
 
 
 def test_render_single_adds_shortest_with_music(monkeypatch):

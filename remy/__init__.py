@@ -1,4 +1,4 @@
-"""tokcut — personal auto-editor for vertical TikTok clips.
+"""remy — personal auto-editor for vertical TikTok clips.
 
 Turns raw phone footage into tight 1080x1920 videos: motion analysis
 drives speed-ramps, a persistent styled caption is auto-placed where it

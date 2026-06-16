@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="tokcutbot.png" alt="tokcut logo" width="200">
+<img src="remybot.png" alt="remy logo" width="200">
 
-# ✂️🎬 tokcut
+# ✂️🎬 remy
 
 ### raw phone clip in → scroll-stopping TikTok out
 
-*Shoot a long, messy clip, let `tokcut` cut the boring bits, slap on a clean
+*Shoot a long, messy clip, let `remy` cut the boring bits, slap on a clean
 caption, and drop a beat underneath — ready to upload.*
 
-[![CI](https://github.com/vyahello/tokcut/actions/workflows/ci.yml/badge.svg)](https://github.com/vyahello/tokcut/actions/workflows/ci.yml)
+[![CI](https://github.com/vyahello/remy/actions/workflows/ci.yml/badge.svg)](https://github.com/vyahello/remy/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue?logo=python&logoColor=white)](https://www.python.org)
 [![Tests](https://img.shields.io/badge/tests-188%20passing-brightgreen?logo=pytest&logoColor=white)](tests)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff)
@@ -57,22 +57,22 @@ System requirements: `ffmpeg`/`ffprobe` with libx265, fonts
 ```bash
 # preview the cut plan (instant, no encode) — length is solved
 # automatically (TikTok completion-rate sweet spot, action never sped up)
-tokcut clip.MOV -c "How I set this up ⚡" --dry-run
+remy clip.MOV -c "How I set this up ⚡" --dry-run
 
 # render — muted by default, you add a trending sound in TikTok
-tokcut clip.MOV -c "How I set this up ⚡"
+remy clip.MOV -c "How I set this up ⚡"
 
 # pin the length yourself / keep your original ambient audio
-tokcut clip.MOV -c "How I set this up ⚡" --target 45 --keep-audio
+remy clip.MOV -c "How I set this up ⚡" --target 45 --keep-audio
 
 # bake in a synthesized phonk track, cuts snapped to the beat
-tokcut clip.MOV -c "How I set this up ⚡" --music --music-style phonk
+remy clip.MOV -c "How I set this up ⚡" --music --music-style phonk
 
 # or your own audio file
-tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
+remy clip.MOV -c "..." --music ~/tracks/mytrack.mp3
 ```
 
-(`python -m tokcut ...` works too if you didn't `pip install`.)
+(`python -m remy ...` works too if you didn't `pip install`.)
 
 > 💡 **Pro tip:** always `--dry-run` first — it prints the cut plan
 > (which seconds get fast-forwarded vs kept) in a fraction of a second,
@@ -96,7 +96,7 @@ tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
    inside TikTok's UI safe zone, so it never covers the screen/device.
 7. **Audio** — muted by default (silent export for in-app TikTok sound).
    `--keep-audio` retains the original ambient; `--music` bakes in a
-   royalty-free synthwave/phonk track synthesized by `tokcut.music` (zero
+   royalty-free synthwave/phonk track synthesized by `remy.music` (zero
    copyright risk) — and since the track's beat grid is known exactly,
    every cut is **snapped onto the beat** 🥁.
 8. **Render** — one ffmpeg `filter_complex`: per-segment trim/setpts +
@@ -107,7 +107,7 @@ tokcut clip.MOV -c "..." --music ~/tracks/mytrack.mp3
 ## 🗂️ Layout
 
 ```
-tokcut/            package
+remy/            package
   analysis.py        probe, motion scoring, saliency, hook/crop/trims
   caption.py         caption rendering + TikTok-eligibility checks
   layout.py          canvas layout + saliency-aware caption placement
@@ -152,12 +152,12 @@ design.
 ```bash
 pip install -e ".[bot]"          # adds python-telegram-bot
 cp .env.example .env             # fill in token + your Telegram id
-tokcut-bot
+remy-bot
 ```
 
 For full-length clips over Telegram's 50 MB cap, run a local Bot API server
 (`docker compose -f docker-compose.botapi.yml up -d`) and set
-`TOKCUT_BOT_API_URL` — it lifts the limit to 2 GB. See [`docs/BOT.md`](docs/BOT.md).
+`REMY_BOT_API_URL` — it lifts the limit to 2 GB. See [`docs/BOT.md`](docs/BOT.md).
 
 ## 🗺️ Roadmap
 

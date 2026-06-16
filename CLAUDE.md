@@ -1,4 +1,4 @@
-# tokcut — auto TikTok editor
+# remy — auto TikTok editor
 
 ## What this project is
 
@@ -16,15 +16,15 @@ edited clip ready to post (see `docs/IDEAS.md`).
 
 | Path | Purpose |
 |------|---------|
-| `tokcut/analysis.py` | probe, motion scoring, saliency map, edit decision list |
-| `tokcut/caption.py` | caption PNG rendering + TikTok-eligibility checks |
-| `tokcut/layout.py` | 1080x1920 canvas layout + saliency-aware caption placement |
-| `tokcut/music.py` | chord-progression synthwave/phonk generator — SoundFont instruments (tinysoundfont + GM .sf2) when available, numpy oscillators otherwise, optional pedalboard mastering |
-| `tokcut/render.py` | ffmpeg filtergraph builder + encode |
-| `tokcut/cli.py` | argparse entry point (`python -m tokcut` / `tokcut`) |
-| `tokcut/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
-| `tokcut/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames and, after render, writes paste-ready TikTok post copy (fun blurb + relevant hashtags) grounded in the output frames (subscription OAuth) |
-| `tokcut/bot/` | private Telegram bot (`config`, `pipeline`, `app`) — see docs/BOT.md |
+| `remy/analysis.py` | probe, motion scoring, saliency map, edit decision list |
+| `remy/caption.py` | caption PNG rendering + TikTok-eligibility checks |
+| `remy/layout.py` | 1080x1920 canvas layout + saliency-aware caption placement |
+| `remy/music.py` | chord-progression synthwave/phonk generator — SoundFont instruments (tinysoundfont + GM .sf2) when available, numpy oscillators otherwise, optional pedalboard mastering |
+| `remy/render.py` | ffmpeg filtergraph builder + encode |
+| `remy/cli.py` | argparse entry point (`python -m remy` / `remy`) |
+| `remy/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
+| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames and, after render, writes paste-ready TikTok post copy (fun blurb + relevant hashtags) grounded in the output frames (subscription OAuth) |
+| `remy/bot/` | private Telegram bot (`config`, `pipeline`, `app`) — see docs/BOT.md |
 | `tests/` | pytest suite — pure logic, no ffmpeg/network needed (one font-gated test) |
 | `docs/USAGE.md` | how to run it |
 | `docs/IDEAS.md` | content/format brainstorm + Telegram bot + music roadmap |
@@ -82,9 +82,9 @@ edited clip ready to post (see `docs/IDEAS.md`).
    crackle. The notes are played by **sampled GM instruments** when
    `tinysoundfont` + a `.sf2` are present (choir/strings/piano for
    phonk, polysynth/saw/synth-bass for synthwave, real drum kit;
-   discovery: `TOKCUT_SOUNDFONT`, then best-quality first —
+   discovery: `REMY_SOUNDFONT`, then best-quality first —
    FluidR3 > GeneralUser > … > TimGM6mb — under `/usr/share/sounds/sf2`,
-   `/usr/share/soundfonts`, `~/.tokcut`) with numpy oscillators as
+   `/usr/share/soundfonts`, `~/.remy`) with numpy oscillators as
    fallback. A noise riser sweeps into the first downbeat for energy.
    The master bus runs Spotify's `pedalboard` FX chain (compressor /
    distortion / treble shelf / gain into a hard limiter — loud and
@@ -122,7 +122,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 
 ## Conventions and constraints
 
-- **Run via the venv**: `venv/bin/python3 -m tokcut …` (or `tokcut` if
+- **Run via the venv**: `venv/bin/python3 -m remy …` (or `remy` if
   `pip install -e .` was run).
 - **Color tags must match the source** (`render.color_args`) — HLG sources
   encoded without `arib-std-b67` look washed out, and SDR sources tagged
@@ -159,7 +159,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 ```bash
 venv/bin/pip install -e ".[dev]"
 venv/bin/pytest          # 33 tests, < 1s, no ffmpeg required
-venv/bin/ruff check tokcut tests
+venv/bin/ruff check remy tests
 venv/bin/mypy            # fully typed; must stay clean
 ```
 
@@ -170,14 +170,24 @@ armed by the repo variable `TOKCUT_DEPLOY=enabled` + `VPS_*` secrets and
 skipped otherwise. Server setup: `deploy/bootstrap.sh`, runbook
 `docs/DEPLOY.md`.
 
+**Brand vs. infra:** the project rebranded `tokcut` → `remy` (package,
+CLI `remy`/`remy-bot`, `REMY_*` env vars). The **live VPS deployment
+deliberately keeps the `tokcut` names** — `/opt/tokcut`, the `tokcut-bot`
+systemd unit, `/etc/tokcut/env`, the `TOKCUT_DEPLOY` repo variable, the
+CI deploy job, and `deploy/*` — so the running bot survives the rename.
+Two safety nets bridge it: legacy `tokcut`/`tokcut-bot` console-script
+aliases in `pyproject.toml`, and `TOKCUT_*` env-var fallback in
+`bot/config.py` + `music.py`. Migrate the box to the `remy` names at
+leisure (see `docs/DEPLOY.md`).
+
 ## Reproduce the sample result
 
 ```bash
-venv/bin/python3 -m tokcut original.MOV \
+venv/bin/python3 -m remy original.MOV \
   -c "How I set this up ⚡" \
   --hook --target 53 -o auto_edited.mp4
 # with music:
-venv/bin/python3 -m tokcut original.MOV \
+venv/bin/python3 -m remy original.MOV \
   -c "How I set this up ⚡" \
   --hook --target 53 --music --music-style phonk -o auto_edited_music.mp4
 ```

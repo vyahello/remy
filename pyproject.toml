@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tokcut"
+name = "remy"
 version = "0.1.0"
 description = "Personal auto-editor for vertical TikTok clips (speed-ramp + caption + music)"
 readme = "README.md"
@@ -22,14 +22,18 @@ dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.8"]
 bot = ["python-telegram-bot>=21", "pedalboard>=0.9"]
 
 [project.scripts]
-tokcut = "tokcut.cli:main"
-tokcut-bot = "tokcut.bot.app:main"
+remy = "remy.cli:main"
+remy-bot = "remy.bot.app:main"
+# Legacy aliases: the deployed systemd unit runs `tokcut-bot`. Keep these
+# until the VPS is migrated to the remy-* names (see docs/DEPLOY.md).
+tokcut = "remy.cli:main"
+tokcut-bot = "remy.bot.app:main"
 
 [project.urls]
-Homepage = "https://github.com/vyahello/tokcut"
+Homepage = "https://github.com/vyahello/remy"
 
 [tool.setuptools.packages.find]
-include = ["tokcut*"]
+include = ["remy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -45,4 +49,4 @@ select = ["E", "F", "W", "I"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-files = ["tokcut"]
+files = ["remy"]

@@ -161,7 +161,7 @@ def suggest_captions(
         listed = "\n".join(f"- {a}" for a in avoid)
         avoid_note = ("\nThe creator rejected these captions — write "
                       f"something meaningfully different:\n{listed}\n")
-    tmp = tempfile.mkdtemp(prefix="tokcut_judge_")
+    tmp = tempfile.mkdtemp(prefix="remy_judge_")
     try:
         frames = extract_frames(video, spread_times(duration), tmp)
         prompt = CAPTION_PROMPT.format(
@@ -236,7 +236,7 @@ def suggest_post(video: str, duration: float, caption: str = "") -> dict:
     moderation check are dropped. Raises JudgeUnavailable / ValueError on
     failure — the caller treats post copy as best-effort.
     """
-    tmp = tempfile.mkdtemp(prefix="tokcut_post_")
+    tmp = tempfile.mkdtemp(prefix="remy_post_")
     try:
         frames = extract_frames(video, spread_times(duration, n=5,
                                                     margin=0.1), tmp)

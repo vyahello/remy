@@ -5,14 +5,14 @@ architecture for the "film → Telegram → Claude edits → approve/redo" loop.
 
 ## The one idea that makes this work
 
-**Claude directs and critiques; `tokcut` + ffmpeg execute.**
+**Claude directs and critiques; `remy` + ffmpeg execute.**
 
-`tokcut` already does the deterministic, expensive work — motion scoring,
+`remy` already does the deterministic, expensive work — motion scoring,
 cut detection, speed-ramps, caption rendering, encoding — fast, free, and
 reproducibly. Claude is slower and costs tokens per call, so it must not
 re-derive any of that. Claude's job is the part code can't do well:
 
-| Claude (judgment) | Deterministic code (`tokcut`) |
+| Claude (judgment) | Deterministic code (`remy`) |
 |---|---|
 | Read frames → understand what's happening → **write the caption** | Motion analysis, tier classification, cut points |
 | Run `check_caption` reasoning + pick safe wording | Speed solving to hit `--target` |
@@ -33,7 +33,7 @@ former, because:
 - The source clips are large (a 95 s iPhone HEVC clip is ~250 MB) and
   `ffmpeg`/`x265` must run where the file lives — your VPS — not inside
   Anthropic's sandbox.
-- The tool surface is small and well-defined (run `tokcut`, extract
+- The tool surface is small and well-defined (run `remy`, extract
   frames, send to Telegram).
 
 So: a Python service on the VPS holds the Telegram connection **and** the
@@ -48,9 +48,9 @@ every action:
 
 | Tool | Does | Returns |
 |---|---|---|
-| `analyze_plan(target)` | `tokcut --dry-run` | edit decision list (JSON) |
+| `analyze_plan(target)` | `remy --dry-run` | edit decision list (JSON) |
 | `extract_frames(timestamps[])` | ffmpeg keyframes | images for Claude to view |
-| `render(caption, target, caption_pos, music, keep_audio)` | `tokcut` | output path |
+| `render(caption, target, caption_pos, music, keep_audio)` | `remy` | output path |
 | `inspect_output()` | frames from the *rendered* file | images — for self-review |
 | `send_to_telegram(file, message)` | deliver as **document** | delivery status |
 
@@ -87,7 +87,7 @@ both of which pick up that token — so caption/review costs draw from the
 Max-plan quota instead of a per-token bill.
 
 Division of labor (the user's rule): **everything Python can do, Python
-does** — Telegram I/O, allow-list, downloads, running `tokcut`, frame
+does** — Telegram I/O, allow-list, downloads, running `remy`, frame
 extraction. **Everything else goes to Claude Code** — reading frames to
 write the caption, reviewing the rendered output, and turning redo feedback
 into parameter changes.
@@ -105,7 +105,7 @@ Notes / caveats to keep in mind:
 ## Reliability & safety
 
 - **Allow-list your Telegram user ID** — the bot is private.
-- **Constrained tools, not bash** — Claude can only run `tokcut` with
+- **Constrained tools, not bash** — Claude can only run `remy` with
   validated arguments; it can't run arbitrary commands on the VPS.
 - **`check_caption` stays a hard gate** in `render`, independent of Claude.
 - **Secrets in env / a secrets manager** on the VPS, never in the repo.
@@ -129,19 +129,19 @@ Notes / caveats to keep in mind:
 ## Build order
 
 1. ✅ **Bot skeleton** — `python-telegram-bot`, allow-list, receive
-   document, reply with the dry-run edit plan. (`tokcut/bot/`, see `BOT.md`.)
+   document, reply with the dry-run edit plan. (`remy/bot/`, see `BOT.md`.)
 2. ✅ **Full round-trip** — `cli.edit()` is the reusable pipeline core;
    the bot runs it in a worker thread behind a render lock (sequential —
    OOM lesson), streams progress into a status message, and sends the
    finished clip back as a document. Caption = message caption, else
    filename stem.
-3. ✅ **Claude Code judgment** (`tokcut/judge.py`) — headless `claude -p`
+3. ✅ **Claude Code judgment** (`remy/judge.py`) — headless `claude -p`
    on the subscription token. Python extracts sampled frames; Claude
    watches them, identifies the subject, and writes the caption (validated
    against `check_caption`, with alternatives as fallback); after the
    render Claude reviews the output (hook frame included in the samples,
    verdicts constrained to fixable problems). Bot uses Claude when no
-   caption is given; `TOKCUT_CLAUDE=off` disables.
+   caption is given; `REMY_CLAUDE=off` disables.
 4. ✅ **Approve/redo loop** — every delivered render carries
    [✅ Approve] [🔁 Redo] buttons. Redo feedback in free text goes to
    Claude (`judge.interpret_feedback`), which maps it onto editor
@@ -150,7 +150,7 @@ Notes / caveats to keep in mind:
    past captions, renders are versioned (`_r1`, `_r2`, …), and
    "different caption" regenerates via Claude avoiding rejected ones.
    Keyword fallback (shorter/longer) when Claude is unavailable.
-5. ✅ **Local Bot API server for >50 MB files** — `TOKCUT_BOT_API_URL`
+5. ✅ **Local Bot API server for >50 MB files** — `REMY_BOT_API_URL`
    flips the bot into PTB `local_mode` against a self-hosted
    `telegram-bot-api` (compose file: `docker-compose.botapi.yml`), lifting
    the up/download cap from 50 MB to 2 GB so full iPhone clips go through.
@@ -166,5 +166,6 @@ Notes / caveats to keep in mind:
    setup: packages, service user, venv, Claude CLI, Bot API container,
    systemd units, CI sudoers rule), `deploy/tokcut-bot.service`,
    `deploy/env.example`, and the CI deploy job armed by the
-   `TOKCUT_DEPLOY=enabled` repo variable + `VPS_*` secrets. Runbook:
-   `docs/DEPLOY.md`.
+   `TOKCUT_DEPLOY=enabled` repo variable + `VPS_*` secrets. (The live
+   deployment keeps the legacy `tokcut` infra names — see the brand-vs-infra
+   note in CLAUDE.md.) Runbook: `docs/DEPLOY.md`.

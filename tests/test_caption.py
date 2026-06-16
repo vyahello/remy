@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from tokcut import caption as C
+from remy import caption as C
 
 
 def test_check_caption_flags_risky_terms():

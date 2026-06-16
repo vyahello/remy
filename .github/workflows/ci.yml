@@ -31,7 +31,7 @@ jobs:
           pip install -e ".[dev,bot]"
 
       - name: Lint
-        run: ruff check tokcut tests
+        run: ruff check remy tests
 
       - name: Type check
         run: mypy

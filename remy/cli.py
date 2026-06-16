@@ -1,4 +1,4 @@
-"""Command-line entry point: python -m tokcut ..."""
+"""Command-line entry point: python -m remy ..."""
 
 import argparse
 import os
@@ -59,7 +59,7 @@ def _parse_target(value: str) -> float | str | None:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="tokcut", description="Auto-editor for vertical TikTok clips")
+        prog="remy", description="Auto-editor for vertical TikTok clips")
     ap.add_argument("input")
     ap.add_argument("-c", "--caption", default="",
                     help="Persistent caption text (emoji supported). "
@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--dry-run", action="store_true",
                     help="Print the edit decision list and exit")
     ap.add_argument("--version", action="version",
-                    version=f"tokcut {__version__}")
+                    version=f"remy {__version__}")
     return ap
 
 
@@ -206,7 +206,7 @@ def edit(
     the creator overlays their own).
     """
     notify = on_progress or (lambda _line: None)
-    out = output or os.path.splitext(input_path)[0] + "_tokcut.mp4"
+    out = output or os.path.splitext(input_path)[0] + "_remy.mp4"
 
     src, segs, est, frames, hook_win = plan(input_path, target, hook)
     landscape = is_landscape(src)
@@ -254,7 +254,7 @@ def edit(
     if dry_run:
         return out
 
-    tmp = tempfile.mkdtemp(prefix="tokcut_")
+    tmp = tempfile.mkdtemp(prefix="remy_")
     try:
         cap_png: str | None = None
         lay: Layout | None = None

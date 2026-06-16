@@ -53,7 +53,7 @@ caps at 50 MB).
 The judgment layer runs Claude Code headless (`claude -p`). On a dev
 machine an existing `claude` login is enough. On a server, generate a
 long-lived token from your subscription with `claude setup-token` and set
-`CLAUDE_CODE_OAUTH_TOKEN` in the bot's environment. Set `TOKCUT_CLAUDE=off`
+`CLAUDE_CODE_OAUTH_TOKEN` in the bot's environment. Set `REMY_CLAUDE=off`
 to disable the judgment layer entirely (filename captions, no post copy).
 
 ## Setup
@@ -65,14 +65,14 @@ cp .env.example .env                 # then fill in the values
 
 Get the two required values:
 - **`TELEGRAM_BOT_TOKEN`** — create a bot via [@BotFather](https://t.me/BotFather).
-- **`TOKCUT_ALLOWED_USER_ID`** — your numeric Telegram id from
+- **`REMY_ALLOWED_USER_ID`** — your numeric Telegram id from
   [@userinfobot](https://t.me/userinfobot). The bot only answers this user.
 
 ## Run
 
 ```bash
 set -a; . ./.env; set +a      # load .env into the environment
-venv/bin/tokcut-bot           # or: venv/bin/python3 -m tokcut.bot.app
+venv/bin/remy-bot           # or: venv/bin/python3 -m remy.bot.app
 ```
 
 Then in Telegram: send `/start`, then send a clip. **Send it as a *file*
@@ -100,9 +100,9 @@ included.
 3. Point the bot at it and run on the **same host** (they share a download
    directory at an identical path — see the compose file):
    ```bash
-   echo 'TOKCUT_BOT_API_URL=http://127.0.0.1:8081' >> .env
+   echo 'REMY_BOT_API_URL=http://127.0.0.1:8081' >> .env
    set -a; . ./.env; set +a
-   venv/bin/tokcut-bot
+   venv/bin/remy-bot
    ```
 
 On startup the bot logs which endpoint it's using (`api=local Bot API …` vs
@@ -112,7 +112,7 @@ paths instead of an HTTP copy, so even large clips land instantly.
 ## What runs where
 
 - **Python** (this code): Telegram I/O, allow-list, downloads, running
-  `tokcut` — everything deterministic.
+  `remy` — everything deterministic.
 - **Claude Code** (subscription OAuth): caption wording, the paste-ready
   TikTok post copy, and the approve/redo conversation. Set
   `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) now so it's ready.
