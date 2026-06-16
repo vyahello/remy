@@ -16,7 +16,9 @@ caps at 50 MB).
    renders yet.
 2. A **setup screen** appears. You pick the caption — tap an idea, *type
    your own*, or **🚫 No caption** — and flip the options you want before
-   rendering: **cold open** (off by default), length, zoom, look, music.
+   rendering: **cold open** (off by default), zoom, look, music. Length is
+   auto (a TikTok-friendly target solved from the content); tune it with
+   ⚡/🐢 in the redo loop after you've seen a take.
    Defaults are **no cold open and no caption**. Tap **🎬 Render** to start.
    A message caption sent with the file pre-selects it. **Landscape clips**
    (laptop/OBS recordings) bake no caption — native resolution so they go

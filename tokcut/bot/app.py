@@ -133,11 +133,13 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
                key: str) -> InlineKeyboardButton:
         return opt(f"{icon} {name}: " + ("ON ✅" if on else "off"), key)
 
+    # No length buttons here: the export is auto-length on first render
+    # (a TikTok-friendly target solved from the content). "Shorter/Longer"
+    # only mean something relative to a take you've seen, so they live in
+    # the redo keyboard — tuning length is a post-render decision.
     rows.append([toggle("🪝", "Cold open", p.hook, "hook"),
                  toggle("🔍", "Zoom", p.crop, "crop")])
     rows.append([toggle("✨", "Look", p.look, "look"),
-                 opt("⚡ Shorter", "shorter")])
-    rows.append([opt("🐢 Longer", "longer"),
                  opt(pick(not p.music_style, "🔇", "Mute"), "nomusic")])
     rows.append([opt(pick(p.music_style == "phonk", "🥁", "Phonk"), "phonk"),
                  opt(pick(p.music_style == "synthwave", "🎹", "Synth"),
@@ -192,7 +194,7 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(_user_id(update), cfg.allowed_user_id):
         return
     await update.message.reply_text(
-        "🎬 Hey! I'm *tokcut* — your pocket TikTok editor.\n\n"
+        "🎬 Hey, I'm *Remy* — your pocket TikTok editor.\n\n"
         "Send me a clip *as a file* 📎 and I'll send back a ready-to-post "
         "edit. That's it — /help has the details.",
         parse_mode="Markdown",
@@ -204,7 +206,7 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(_user_id(update), cfg.allowed_user_id):
         return
     await update.message.reply_text(
-        "📖 *How to use tokcut*\n\n"
+        "📖 *How to use Remy*\n\n"
         "*1. Send a clip — always as a file* 📎 → File\n"
         "Plain video messages get recompressed by Telegram and the "
         "quality is ruined before I see it.\n\n"
