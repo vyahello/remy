@@ -359,6 +359,17 @@ Available settings:
   tighter into the action, lower pulls wider. Adjust in steps of about
   0.15-0.3 from the current value ("closer"/"tighter"/"can't read it"
   goes up, "wider"/"too cropped"/"show more" goes down; range 0.5-2.5)
+- trim_start: seconds to hard-cut off the BEGINNING of the raw clip
+  (0-60). Use it for a dead/irrelevant intro the auto-edit left in: a
+  recorder-UI shot (OBS/screen-capture window), a long fumble before the
+  real action, "remove the first 3 seconds", "cut the OBS intro", "start
+  when the terminal opens". Give the ABSOLUTE seconds from the raw start
+  (the current value is in the settings above — for "trim a bit more off
+  the start" ADD to it). Only set when the feedback is about the opening.
+- trim_end: seconds to hard-cut off the END of the raw clip (0-60). Use
+  it for a redundant outro: "it drags at the end", "cut the last 4
+  seconds", "end when btop closes", "remove the part after I quit".
+  Absolute seconds from the raw end; same add-on-more rule as trim_start.
 - look: finishing color grade — contrast/saturation pop, crisper text
   (true/false; "too saturated"/"flat colors" feedback maps here)
 - keep_audio: keep the original ambient sound (default is muted)
@@ -373,8 +384,9 @@ Available settings:
 Reply with ONLY a JSON object, null for anything that should not change:
 {{"caption": null, "regenerate_caption": false, "target": null,
  "caption_pos": null, "style": null, "hook": null, "crop": null,
- "zoom": null, "look": null, "keep_audio": null, "music": null,
- "music_bpm": null, "new_music_mix": false,
+ "zoom": null, "look": null, "trim_start": null, "trim_end": null,
+ "keep_audio": null, "music": null, "music_bpm": null,
+ "new_music_mix": false,
  "reply": "<one short line telling the creator what you'll change>"}}
 
 Change only what the feedback implies — when in doubt, change less. One

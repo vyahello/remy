@@ -254,6 +254,28 @@ def test_edit_window_portrait_keeps_head():
     assert tail == 58.0
 
 
+def test_edit_window_manual_trim_stacks_with_auto():
+    # explicit trim removes more than the auto window -> explicit wins
+    head, tail = A.edit_window(60.0, landscape=True,
+                               trim_start=5.0, trim_end=8.0)
+    assert head == 5.0                 # > OBS_HEAD (1.5)
+    assert tail == 60.0 - 8.0          # cut more than OBS_TAIL (3.0)
+
+
+def test_edit_window_manual_trim_below_auto_keeps_auto():
+    # a smaller explicit trim never keeps MORE than the auto window
+    head, tail = A.edit_window(60.0, landscape=True,
+                               trim_start=0.5, trim_end=1.0)
+    assert head == A.OBS_HEAD          # auto still wins (1.5 > 0.5)
+    assert tail == 60.0 - A.OBS_TAIL   # auto still wins (3.0 > 1.0)
+
+
+def test_edit_window_over_trim_keeps_min_window():
+    head, tail = A.edit_window(30.0, landscape=False,
+                               trim_start=20.0, trim_end=20.0)
+    assert tail - head >= 1.0          # never collapses below 1s
+
+
 def test_to_segments_drops_runs_past_duration():
     import numpy as np
     # 30 lag samples then 6 action samples; window ends mid-lag at 4.5s

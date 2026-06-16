@@ -104,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--zoom", type=float, default=1.0,
                     help="framing dial on top of the auto-zoom: >1 "
                          "tighter, <1 wider (default 1.0 = auto)")
+    ap.add_argument("--trim-start", type=float, default=0.0, metavar="SEC",
+                    help="hard-cut this many seconds off the source head "
+                         "(e.g. a recorder-UI intro); stacks on auto-trim")
+    ap.add_argument("--trim-end", type=float, default=0.0, metavar="SEC",
+                    help="hard-cut this many seconds off the source tail "
+                         "(e.g. a redundant outro); stacks on auto-trim")
     ap.add_argument("--keep-audio", action="store_true",
                     help="Keep the original ambient audio. By default the "
                          "export is muted so you add a TikTok sound in-app.")
@@ -129,7 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def plan(
-    input_path: str, target: float | str | None, hook: bool = True
+    input_path: str, target: float | str | None, hook: bool = True,
+    trim_start: float = 0.0, trim_end: float = 0.0,
 ) -> tuple[SourceInfo, list[SpeedSegment], float, np.ndarray,
            tuple[float, float] | None]:
     """Analysis + edit decisions.
@@ -148,7 +155,7 @@ def plan(
     # recording shuffle, and landscape screen recordings open/close on
     # the capture tool's UI (OBS & friends) — hard-trim both
     dur = src["duration"]
-    head, dur_eff = edit_window(dur, is_landscape(src))
+    head, dur_eff = edit_window(dur, is_landscape(src), trim_start, trim_end)
     runs = trim_dead_ends(
         to_segments(classify(scores), duration=dur_eff))
     if head:
@@ -179,6 +186,8 @@ def edit(
     style: str = DEFAULT_STYLE,
     caption_pos: str = "auto",
     hook: bool = False,
+    trim_start: float = 0.0,
+    trim_end: float = 0.0,
     crop_enabled: bool = True,
     zoom: float = 1.0,
     look_enabled: bool = True,
@@ -208,7 +217,10 @@ def edit(
     notify = on_progress or (lambda _line: None)
     out = output or os.path.splitext(input_path)[0] + "_remy.mp4"
 
-    src, segs, est, frames, hook_win = plan(input_path, target, hook)
+    src, segs, est, frames, hook_win = plan(
+        input_path, target, hook, trim_start, trim_end)
+    if trim_start or trim_end:
+        notify(f"manual trim: −{trim_start:.1f}s head / −{trim_end:.1f}s tail")
     landscape = is_landscape(src)
     notify(f"source: {src['w']}x{src['h']}  {src['duration']:.1f}s "
            f"@ {src['fps']:.0f}fps  "
@@ -339,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
             style=args.style,
             caption_pos=args.caption_pos,
             hook=args.hook,
+            trim_start=args.trim_start,
+            trim_end=args.trim_end,
             crop_enabled=args.crop,
             zoom=args.zoom,
             look_enabled=args.look,

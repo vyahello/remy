@@ -159,12 +159,47 @@ def test_post_copy_stale_only_on_visible_content_change():
     assert post_copy_stale({"crop": True})
     assert post_copy_stale({"zoom": 1.3})
     assert post_copy_stale({"hook": True})
+    assert post_copy_stale({"trim_start": 3.0})
+    assert post_copy_stale({"trim_end": 2.0})
     # placement / look / music / audio don't change description+hashtags
     assert not post_copy_stale({"caption_pos": "bottom"})
     assert not post_copy_stale({"style": "yellow"})
     assert not post_copy_stale({"music_style": "phonk"})
     assert not post_copy_stale({"keep_audio": True})
     assert not post_copy_stale({})
+
+
+def test_validate_and_apply_trim():
+    from remy.bot.session import EditSession, apply_updates, validate_updates
+    out = validate_updates({"trim_start": 3.0, "trim_end": 90.0})
+    assert out["trim_start"] == 3.0
+    assert out["trim_end"] == 60.0  # clamped to MAX_TRIM
+    assert validate_updates({"trim_start": -2.0})["trim_start"] == 0.0
+    assert validate_updates({"trim_start": True}) == {}  # bool rejected
+    s = EditSession(source="x", file_name="x", caption="c")
+    changes = apply_updates(s, out)
+    assert s.params.trim_start == 3.0 and s.params.trim_end == 60.0
+    assert any("trim start" in c for c in changes)
+    assert any("trim end" in c for c in changes)
+
+
+def test_fallback_trim_parsing():
+    from remy.bot.session import EditParams
+    p = EditParams()
+    assert fallback_updates("remove the first 3 seconds",
+                            p) == {"trim_start": 3.0}
+    assert fallback_updates("cut 4s off the end", p) == {"trim_end": 4.0}
+    assert fallback_updates("trim the OBS intro", p)["trim_start"] > 0
+    # both ends in one go
+    both = fallback_updates("trim 2 seconds from the start and the end", p)
+    assert both == {"trim_start": 2.0, "trim_end": 2.0}
+
+
+def test_tweak_trim_buttons_add_a_step():
+    from remy.bot.session import TRIM_STEP, EditParams, tweak_updates
+    p = EditParams(trim_start=2.0)
+    assert tweak_updates("trimstart", p) == {"trim_start": 2.0 + TRIM_STEP}
+    assert tweak_updates("trimend", p) == {"trim_end": TRIM_STEP}
 
 
 # ------------------------------------------------------------- tweaks

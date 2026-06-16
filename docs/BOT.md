@@ -35,16 +35,17 @@ caps at 50 MB).
    with the post copy and [✅ Approve] [🔁 Redo] buttons.
 6. **Redo**: a quick-tap keyboard (two buttons per row, so nothing is
    clipped on iPhone) covers the common tweaks — ⚡ shorter, 🐢 longer,
-   🔎 tighter / 🔭 wider framing, 🪝 cold open on/off, 🔍 zoom on/off,
-   ✨ look on/off, 🥁 phonk / 🎹 synthwave, 🔥 faster / 🧊 slower beat,
-   🎲 new mix, 🔇 no music, plus ✍️ new caption and 🎨 next style on
-   vertical clips. Buttons apply
+   🔎 tighter / 🔭 wider framing, ✂️ trim intro / ✂️ trim outro (1s per
+   tap), 🪝 cold open on/off, 🔍 zoom on/off, ✨ look on/off, 🥁 phonk /
+   🎹 synthwave, 🔥 faster / 🧊 slower beat, 🎲 new mix, 🔇 no music, plus
+   ✍️ new caption and 🎨 next style on vertical clips. Buttons apply
    instantly (no Claude round-trip). And **chat is always on**: any text
    you send while a clip is in session counts as feedback — no Redo tap
-   needed. "make it more zoomed", "caption at the top", "white on black
-   caption" — Claude maps it to settings (validated and clamped in
-   Python). The next take arrives with the same buttons. Sessions remember
-   history and rejected captions, so regenerated captions don't repeat.
+   needed. "make it more zoomed", "caption at the top", "cut the first 3
+   seconds", "end when btop closes" — Claude maps it to settings (validated
+   and clamped in Python). The next take arrives with the same buttons.
+   Sessions remember history and rejected captions, so regenerated
+   captions don't repeat.
 7. **Approve cleans up**: tapping ✅ deletes the downloaded original and
    every rendered revision from the workdir (they already live in
    Telegram). Sending a new clip likewise clears any abandoned session,

@@ -24,6 +24,8 @@ Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 | `--hook` / `--no-hook` | off | Cold-open: prepend ~1.3s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. Opt-in — add `--hook` to enable. |
 | `--crop` / `--no-crop` | on | Auto-zoom into the motion-energy bounding box, dropping static margins (desktop wallpaper, window chrome). Only crops when it gains ≥10% — otherwise leaves the frame alone. |
 | `--zoom F` | 1.0 | Framing dial on top of the auto-zoom: `1.2` punches in tighter around the same center, `0.8` pulls wider. Works even with `--no-crop` (a deliberate centered punch-in). |
+| `--trim-start SEC` | 0 | Hard-cut this many seconds off the source **head** — a recorder-UI intro (OBS/screen-capture window), a long fumble before the action. Stacks on the automatic edge-trim (whichever removes more wins). |
+| `--trim-end SEC` | 0 | Hard-cut this many seconds off the source **tail** — a redundant outro (exiting the app, the stop-recording shuffle). Stacks on the automatic edge-trim. |
 | `--hook-card` / `--no-hook-card` | off | Animated text card over the opening 1.6s (vertical only). See [Hook card](#hook-card). |
 | `--hook-card-text` | caption | Override the hook card text (defaults to the caption). |
 | `--hook-card-pushin` / `--no-hook-card-pushin` | off | Also ease the footage in under the card while it's visible. |

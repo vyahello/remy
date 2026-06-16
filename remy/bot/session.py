@@ -7,6 +7,7 @@ render.
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 
 from ..analysis import AUTO_SWEET
@@ -18,6 +19,8 @@ VALID_MUSIC = ("synthwave", "phonk", "off")
 MIN_TARGET, MAX_TARGET = 10.0, 120.0
 MIN_ZOOM, MAX_ZOOM = 0.5, 2.5
 ZOOM_STEP = 1.15  # one tap of Tighter/Wider
+MAX_TRIM = 60.0   # most seconds a single head/tail cut may remove
+TRIM_STEP = 1.0   # one tap of Trim start/end
 MIN_BPM, MAX_BPM = 60, 180
 TEMPO_STEP = 1.12  # one tap of Faster/Slower beat
 
@@ -28,6 +31,8 @@ class EditParams:
     style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
     hook: bool = False  # cold-open teaser — opt-in (default off)
+    trim_start: float = 0.0  # secs hard-cut off the source head (intro)
+    trim_end: float = 0.0    # secs hard-cut off the source tail (outro)
     crop: bool = True
     zoom: float = 1.0  # framing dial on top of the auto-zoom
     look: bool = True  # finishing grade (contrast/saturation pop)
@@ -70,10 +75,13 @@ class EditSession:
             audio = f"{p.music_style}@{bpm}bpm#{p.music_seed}"
         else:
             audio = "muted"
+        trim = ""
+        if p.trim_start or p.trim_end:
+            trim = f" trim=-{p.trim_start:.1f}s/-{p.trim_end:.1f}s"
         return (f'caption="{self.caption}" target={target} '
                 f"style={p.style} caption_pos={p.caption_pos} "
                 f"hook={p.hook} crop={p.crop} zoom={p.zoom:.2f} "
-                f"audio={audio}")
+                f"audio={audio}{trim}")
 
 
 def cleanup_files(session: EditSession) -> tuple[int, int]:
@@ -117,6 +125,11 @@ def validate_updates(raw: dict) -> dict:
     zoom = raw.get("zoom")
     if isinstance(zoom, (int, float)) and not isinstance(zoom, bool):
         out["zoom"] = round(min(MAX_ZOOM, max(MIN_ZOOM, float(zoom))), 3)
+
+    for key in ("trim_start", "trim_end"):
+        val = raw.get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            out[key] = round(min(MAX_TRIM, max(0.0, float(val))), 2)
 
     pos = raw.get("caption_pos")
     if isinstance(pos, str) and pos in VALID_CAPTION_POS:
@@ -170,6 +183,12 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
         direction = "tighter" if updates["zoom"] > p.zoom else "wider"
         p.zoom = updates["zoom"]
         changes.append(f"framing → {p.zoom:.2f}x ({direction})")
+    if "trim_start" in updates and updates["trim_start"] != p.trim_start:
+        p.trim_start = updates["trim_start"]
+        changes.append(f"trim start → {p.trim_start:.1f}s")
+    if "trim_end" in updates and updates["trim_end"] != p.trim_end:
+        p.trim_end = updates["trim_end"]
+        changes.append(f"trim end → {p.trim_end:.1f}s")
     for key, label in (("hook", "hook"), ("crop", "auto-zoom"),
                        ("look", "color grade"),
                        ("keep_audio", "ambient audio")):
@@ -195,7 +214,8 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
 # The TikTok post copy is grounded in those frames, so only these warrant
 # re-asking Claude for it — a pure placement / music / audio tweak reuses
 # the cached copy (no redundant round-trip).
-POST_COPY_KEYS = frozenset({"caption", "target", "hook", "crop", "zoom"})
+POST_COPY_KEYS = frozenset({"caption", "target", "hook", "crop", "zoom",
+                            "trim_start", "trim_end"})
 
 
 def post_copy_stale(updates: dict) -> bool:
@@ -223,6 +243,10 @@ def tweak_updates(key: str, params: EditParams) -> dict:
         return {"zoom": params.zoom * ZOOM_STEP}
     if key == "wider":
         return {"zoom": params.zoom / ZOOM_STEP}
+    if key == "trimstart":
+        return {"trim_start": params.trim_start + TRIM_STEP}
+    if key == "trimend":
+        return {"trim_end": params.trim_end + TRIM_STEP}
     if key == "look":
         return {"look": not params.look}
     if key in ("phonk", "synthwave"):
@@ -261,6 +285,23 @@ def fallback_updates(feedback: str, params: EditParams) -> dict:
         return {"target": base * 0.8}
     if "long" in low:
         return {"target": base * 1.2}
+    if any(w in low for w in ("trim", "cut", "remove", "chop", "drop",
+                              "intro", "outro")):
+        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)", low) \
+            or re.search(r"(\d+(?:\.\d+)?)", low)
+        secs = float(m.group(1)) if m else TRIM_STEP * 2
+        head = any(w in low for w in ("start", "begin", "first", "intro",
+                                      "front", "opening", "head"))
+        tail = any(w in low for w in ("end", "last", "outro", "finish",
+                                      "ending", "tail"))
+        out: dict = {}
+        if head:
+            out["trim_start"] = secs
+        if tail:
+            out["trim_end"] = secs
+        if not head and not tail:  # direction unclear → assume the intro
+            out["trim_start"] = secs
+        return out
     if any(w in low for w in ("bottom", "lower", "move it down", "on my hand",
                               "over the keyboard", "below")):
         return {"caption_pos": "bottom"}

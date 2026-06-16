@@ -487,18 +487,31 @@ OBS_HEAD = 1.5
 OBS_TAIL = 3.0
 
 
-def edit_window(duration: float, landscape: bool) -> tuple[float, float]:
+def edit_window(
+    duration: float, landscape: bool,
+    trim_start: float = 0.0, trim_end: float = 0.0,
+) -> tuple[float, float]:
     """Usable (head, tail) window of the source in seconds.
 
     Short clips are kept whole. Longer ones always lose the last beat
     (the stop-the-recording shuffle); landscape screen recordings also
     lose a head/tail slice where the capture tool's own UI shows up.
+
+    `trim_start` / `trim_end` are the creator's explicit cuts (seconds off
+    the raw head/tail). They STACK on the automatic window — whichever
+    removes more wins — so "cut the first 3s" still works when the auto
+    trim already took 1.5s. A minimum 1s window is always kept.
     """
     if duration <= 20.0:
-        return 0.0, duration
-    if landscape:
-        return OBS_HEAD, duration - OBS_TAIL
-    return 0.0, duration - 2.0
+        head, tail = 0.0, duration
+    elif landscape:
+        head, tail = OBS_HEAD, duration - OBS_TAIL
+    else:
+        head, tail = 0.0, duration - 2.0
+    head = max(head, max(0.0, trim_start))
+    tail = min(tail, duration - max(0.0, trim_end))
+    head = min(head, max(0.0, tail - 1.0))  # never cross; keep ≥1s
+    return head, tail
 
 
 # TikTok's main ranking signal is completion rate, so shorter wins —
