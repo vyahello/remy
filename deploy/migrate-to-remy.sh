@@ -61,12 +61,18 @@ $SVC_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart remy-bot
 SUDO
 chmod 440 /etc/sudoers.d/remy-deploy
 
-echo "==> pulling latest code + reinstalling the venv as $SVC_USER"
-# guarantees /opt/remy holds the renamed package so the remy-bot console
-# script exists for the new unit's ExecStart
+echo "==> pulling latest code + rebuilding the venv as $SVC_USER"
+# REBUILD the venv, don't reuse the moved one: a virtualenv is not
+# relocatable — every venv/bin/* wrapper keeps an absolute shebang
+# (#!/opt/tokcut/venv/bin/python3) that breaks once the dir moves. The
+# rebuild also guarantees the renamed package so the remy-bot console
+# script exists for the new unit's ExecStart.
 sudo -u "$SVC_USER" bash -c "
     cd /opt/remy
     git fetch origin main && git reset --hard origin/main
+    rm -rf venv
+    python3 -m venv venv
+    venv/bin/pip install -q --upgrade pip
     venv/bin/pip install -q -e '.[bot]'
     venv/bin/pip install -q --no-deps tinysoundfont
 "
