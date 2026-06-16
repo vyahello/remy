@@ -11,7 +11,7 @@ caption, and drop a beat underneath — ready to upload.*
 
 [![CI](https://github.com/vyahello/tokcut/actions/workflows/ci.yml/badge.svg)](https://github.com/vyahello/tokcut/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-blue?logo=python&logoColor=white)](https://www.python.org)
-[![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen?logo=pytest&logoColor=white)](tests)
+[![Tests](https://img.shields.io/badge/tests-188%20passing-brightgreen?logo=pytest&logoColor=white)](tests)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff)
 [![Types: mypy](https://img.shields.io/badge/types-mypy-2a6db2?logo=python&logoColor=white)](https://mypy-lang.org)
 [![ffmpeg](https://img.shields.io/badge/powered%20by-ffmpeg-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
@@ -114,7 +114,7 @@ tokcut/            package
   music.py           procedural dark-synthwave/phonk generator
   render.py          ffmpeg filtergraph + encode (source-matched color)
   cli.py             argparse CLI + reusable edit() pipeline core
-  judge.py           Claude Code: caption writing + output review
+  judge.py           Claude Code: caption writing + TikTok post copy
   types.py           shared TypedDicts + type aliases
   bot/               private Telegram bot (config, session, pipeline, app)
 tests/             pytest suite (logic-level, no GPU/network needed)
@@ -130,14 +130,24 @@ venv/bin/ruff check .    # lint
 venv/bin/mypy            # type-check (codebase is fully typed)
 ```
 
-## 🤖 Telegram bot
+## 🤖 Telegram bot — meet *Remy*
 
-📱 Phone → private Telegram bot → **Claude writes the caption, the bot
-renders, Claude reviews** → file back with **✅ Approve / 🔁 Redo**. Redo in
-plain words ("shorter", "caption at the top", "add phonk music") and Claude
-maps it to settings for the next revision. Claude Code runs on your
-subscription OAuth — see [`docs/BOT.md`](docs/BOT.md) to run it and
-[`docs/BOT_ARCHITECTURE.md`](docs/BOT_ARCHITECTURE.md) for the design.
+📱 Phone → private Telegram bot. Send a clip as a file and **Remy** (the
+bot's persona) takes it from there:
+
+1. **Claude watches it and proposes captions.** You pick one, type your
+   own, or go caption-free — and flip the options you want (cold open,
+   zoom, look, music) in a setup screen. Length is auto; tap **🎬 Render**.
+2. The edit comes back as a clean file with **paste-ready TikTok copy** —
+   a fun blurb + the 5 most relevant hashtags, grounded only in what the
+   video actually shows — plus **✅ Approve / 🔁 Redo**.
+3. **Redo in plain words** ("shorter", "move the caption on my hand", "add
+   phonk music"). Claude maps it to settings — and a placement request just
+   moves the caption, it never rewrites it.
+
+Claude Code runs on your subscription OAuth — see [`docs/BOT.md`](docs/BOT.md)
+to run it and [`docs/BOT_ARCHITECTURE.md`](docs/BOT_ARCHITECTURE.md) for the
+design.
 
 ```bash
 pip install -e ".[bot]"          # adds python-telegram-bot
