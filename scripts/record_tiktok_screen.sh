@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# record_tiktok_screen.sh — capture a centered slice of your X11 screen as a
-# pristine, high-quality clip ready to drop into remy. Three orientations:
-#   vertical   → 1080x1920 (9:16) — TikTok full-screen (remy adds a caption)
-#   landscape  → 1920x1080 (16:9) — kept native by remy; ideal for terminals
-#                & screen recordings (wide content fills the frame, no bars)
+# record_tiktok_screen.sh — capture a slice of your X11 screen as a pristine,
+# high-quality clip ready to drop into remy. Two orientations:
+#   vertical   → 1080x1920 (9:16) — TikTok full-screen (remy adds a caption).
+#                Grabs the tallest centered 9:16 column and upscales it.
 #   full       → your WHOLE screen at its native size (e.g. 1920x1200 on a
-#                16:10 laptop), no aspect cropping — kept native by remy
+#                16:10 laptop), no aspect cropping, captured 1:1 — kept native
+#                by remy. Best for terminals & screen recordings (wide content
+#                fills the frame, no dead bars).
 #
-# Your display is landscape, so vertical grabs the tallest centered 9:16 column,
-# landscape grabs the widest centered 16:9 region (so on a 16:10 panel it drops
-# a thin top/bottom margin), and full grabs the entire screen 1:1. Each is
-# scaled to its exact output size with lanczos (full is 1:1). Before capture it
-# draws the chosen region on screen (a bright green frame) so you can arrange
-# your window inside it instead of guessing.
+# Before capture it draws the chosen region on screen (a bright green frame) so
+# you can arrange your window inside it instead of guessing.
 #
 # Quality: visually-lossless 10-bit 4:4:4 H.264 (CRF 14) by default — looks
 # identical to the source, keeps text crisp, stays realtime at 60fps, and is
@@ -20,16 +17,16 @@
 # add a TikTok sound in-app). After capture the dead head/tail are trimmed
 # (TRIM_HEAD / TRIM_TAIL seconds, 2 each by default).
 #
-# Commands ([landscape] picks 16:9; omit for the vertical default):
-#   record_tiktok_screen.sh [landscape]        # interactive: arrange, record, q to stop
-#   record_tiktok_screen.sh start [landscape]  # start in the background, frees the shell
-#   record_tiktok_screen.sh stop               # stop a background recording (from anywhere)
-#   record_tiktok_screen.sh status             # is a background recording running?
-#   record_tiktok_screen.sh guide [landscape]  # just show the capture frame and exit
-#   record_tiktok_screen.sh install            # symlink to ~/.local/bin/remy-rec (run anywhere)
+# Commands ([full] grabs the whole screen; omit for the vertical default):
+#   record_tiktok_screen.sh [full]        # interactive: arrange, record, q to stop
+#   record_tiktok_screen.sh start [full]  # start in the background, frees the shell
+#   record_tiktok_screen.sh stop          # stop a background recording (from anywhere)
+#   record_tiktok_screen.sh status        # is a background recording running?
+#   record_tiktok_screen.sh guide [full]  # just show the capture frame and exit
+#   record_tiktok_screen.sh install       # symlink to ~/.local/bin/remy-rec (run anywhere)
 #
 # Env knobs:
-#   ORIENT=landscape  16:9 (or `full` = whole screen native) instead of 9:16
+#   ORIENT=full   whole screen native instead of the 9:16 column
 #                                              TRIM_HEAD=2  trim N s off the start
 #   DURATION=30   auto-stop after 30s          TRIM_TAIL=2  trim N s off the end
 #   ENCODER=nvenc GPU encode (long sessions)   OUTDIR=DIR   where the .mp4 lands
@@ -71,10 +68,11 @@ command -v ffmpeg >/dev/null || die "ffmpeg not found"
 normalize_orient() {
     case "${ORIENT,,}" in
         v|vert|vertical|portrait|9:16)   ORIENT=vertical;  OUT_W=1080; OUT_H=1920 ;;
-        h|horiz|horizontal|landscape|wide|16:9)
-                                         ORIENT=landscape; OUT_W=1920; OUT_H=1080 ;;
-        full|fullscreen|native|screen)   ORIENT=full;      OUT_W=0;    OUT_H=0 ;;
-        *) die "unknown ORIENT='$ORIENT' (use vertical | landscape | full)" ;;
+        # landscape/16:9 aliases now mean "the whole screen" — no separate
+        # cropped-16:9 mode (on a 16:10 panel it only lost a top/bottom margin).
+        full|fullscreen|native|screen|h|horiz|horizontal|landscape|wide|16:9)
+                                         ORIENT=full;      OUT_W=0;    OUT_H=0 ;;
+        *) die "unknown ORIENT='$ORIENT' (use vertical | full)" ;;
     esac
 }
 
@@ -102,15 +100,6 @@ the capture region); set REGION=WxH+X+Y to skip auto-detection"
                 cap_h=$(awk -v w="$cap_w" 'BEGIN{h=int(w*16/9); print h - (h%2)}')
                 (( cap_h > sh )) && cap_h=$(( sh - sh%2 ))
             fi
-        elif [[ "$ORIENT" == landscape ]]; then
-            # widest 16:9 slice that fits; clamp to height on very wide screens
-            cap_w=$sw
-            cap_h=$(awk -v w="$sw" 'BEGIN{h=int(w*9/16); print h - (h%2)}')
-            if (( cap_h > sh )); then
-                cap_h=$(( sh - sh%2 ))
-                cap_w=$(awk -v h="$cap_h" 'BEGIN{w=int(h*16/9); print w - (w%2)}')
-                (( cap_w > sw )) && cap_w=$(( sw - sw%2 ))
-            fi
         else
             # full: the entire screen, native resolution (even dims for h264)
             cap_w=$(( sw - sw%2 )); cap_h=$(( sh - sh%2 ))
@@ -124,7 +113,9 @@ the capture region); set REGION=WxH+X+Y to skip auto-detection"
         off_x="${BASH_REMATCH[3]}"; off_y="${BASH_REMATCH[4]}"
     fi
     # full keeps the source 1:1 — output matches the captured region exactly.
-    [[ "$ORIENT" == full ]] && { OUT_W=$cap_w; OUT_H=$cap_h; }
+    # (Must be an `if`, not `[[…]] && …`: as the function's last statement a
+    # false test would make prep_geometry return 1 and trip `set -e`.)
+    if [[ "$ORIENT" == full ]]; then OUT_W=$cap_w; OUT_H=$cap_h; fi
 }
 
 # --- pick the video encoder --------------------------------------------------
@@ -314,11 +305,13 @@ clear_screen() {
 }
 
 print_banner() {  # $1 = "fg" (q to stop) | "bg" (stop command)
+    local scalenote="lanczos-scaled"
+    [[ "$ORIENT" == full ]] && scalenote="native 1:1"
     cat <<INFO
 🎬 remy screen recorder
    display     : $DISPLAY_ID
    capture     : ${cap_w}x${cap_h} at +${off_x},+${off_y}  (native $ORIENT slice)
-   output      : ${OUT_W}x${OUT_H} @ ${FPS}fps  ($ORIENT, lanczos-scaled)
+   output      : ${OUT_W}x${OUT_H} @ ${FPS}fps  ($ORIENT, $scalenote)
    encoder     : $ENCODER  ${ENCODER:+(crf ${CRF})}
    cursor      : $([[ "$DRAW_MOUSE" == 1 ]] && echo shown || echo hidden)
    trim        : ${TRIM_HEAD}s head + ${TRIM_TAIL}s tail (after recording)
@@ -452,9 +445,9 @@ run_install() {
 }
 
 # ============================ dispatch =======================================
-# An orientation token (vertical/landscape & aliases) can be passed as the 2nd
-# arg to once/start/guide — e.g. `start landscape` — or used as the command
-# itself as a shorthand for an interactive recording in that orientation.
+# An orientation token (vertical/full & aliases) can be passed as the 2nd arg
+# to once/start/guide — e.g. `start full` — or used as the command itself as a
+# shorthand for an interactive recording in that orientation.
 case "${1:-once}" in
     ""|once)      ORIENT="${2:-$ORIENT}"; run_foreground ;;
     start)        ORIENT="${2:-$ORIENT}"; run_start ;;
@@ -469,7 +462,7 @@ ${cap_w}x${cap_h} at +${off_x},+${off_y}" ;;
 |full|fullscreen|native|screen)
                   ORIENT="$1"; run_foreground ;;
     -h|--help|help)
-        sed -n '2,40p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+        sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//' ;;
     *)            die "unknown command '$1' (use once|start|stop|status|guide|install \
-[vertical|landscape|full])" ;;
+[vertical|full])" ;;
 esac
