@@ -29,11 +29,15 @@ caps at 50 MB).
    fullscreen in TikTok; Claude sends caption ideas to copy instead.
 3. The render queues (one at a time — parallel encodes can OOM the box)
    and a status message live-updates with the edit plan and progress.
-4. **Claude writes the TikTok post copy** from the rendered frames — a
-   precise, actionable description — what the video teaches and how a
-   viewer can use it — plus the 5 most relevant hashtags, grounded only in what
-   the video shows (no invented features) and moderation-filtered. It's
-   attached to the reply, ready to paste into the TikTok caption box.
+4. **Claude writes the TikTok post copy** from the rendered frames — one
+   brief, educational description: what the video teaches and the payoff,
+   closing on what the tool saves you rather than a raw command paste
+   (a labelled "Try: <command>" tail is stripped — the viewer already
+   sees it run), plus the 5 most relevant hashtags, grounded only in what
+   the video shows (no invented features) and moderation-filtered.
+   TikTok-suppressed/spammy tags (#commandline, #cli, #fyp, #viral …) are
+   dropped, never substituted. It's attached to the reply, ready to paste
+   into the TikTok caption box.
 5. The finished `.mp4` comes back as a **document** (no recompression)
    with the post copy and [✅ Approve] [🔁 Redo] buttons.
 6. **Redo**: a **staging panel** (two buttons per row, so nothing is

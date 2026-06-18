@@ -109,6 +109,40 @@ def test_clean_description_strips_markdown_keeps_emoji_and_snake_case():
         "theme solarized_dark"
 
 
+def test_clean_description_strips_trailing_command_tail():
+    # a labelled "Try: <command>" paste is dropped, the tip + emoji kept
+    out = J.clean_description(
+        'sd is the find & replace sed should have been — use -s for literal '
+        'strings (no escaping!) or plain regex. Try: echo "x 47" | sd "\\d+$"'
+        ' "" 🦀')
+    assert "Try:" not in out and "echo" not in out and "sd \"" not in out
+    assert out.startswith("sd is the find & replace")
+    assert "use -s for literal strings" in out  # real teaching content kept
+    assert out.endswith("🦀")                    # trailing emoji reattached
+    # "Just run: btop" tail goes too
+    assert J.clean_description(
+        "btop shows CPU and RAM at a glance. Just run: btop") == \
+        "btop shows CPU and RAM at a glance"
+
+
+def test_clean_description_keeps_prose_with_verbs():
+    # bare verbs in normal prose (no label colon) must NOT be stripped
+    assert J.clean_description("Stop using grep, run ripgrep instead 🚀") == \
+        "Stop using grep, run ripgrep instead 🚀"
+    assert J.clean_description("use -s for literal strings ⚡") == \
+        "use -s for literal strings ⚡"
+
+
+def test_clean_hashtags_drops_tiktok_suppressed_tags():
+    # #commandline (and #cli/#command/#fyp) are dead weight on TikTok
+    out = J.clean_hashtags(
+        ["#sd", "#rustlang", "#commandline", "#linux", "#coding"])
+    assert "#commandline" not in out
+    assert out == ["#sd", "#rustlang", "#linux", "#coding"]
+    spammy = J.clean_hashtags(["#cli", "#command", "#fyp", "#viral", "#bash"])
+    assert spammy == ["#bash"]
+
+
 def test_clean_window_normal():
     # demo runs 10s..50s of a 60s clip -> trim 10 off head, 10 off tail
     assert J.clean_window({"start": 10, "end": 50}, 60.0) == (10.0, 10.0)

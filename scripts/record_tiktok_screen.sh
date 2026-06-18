@@ -129,9 +129,26 @@ cat <<INFO
    file        : $out
    ${DURATION:+stops after ${DURATION}s}
 
-   ➜ Put what you're filming inside the center column of the screen.
-   ➜ Press  q  then Enter to stop (or Ctrl-C). Recording…
+   ➜ Capture column: ${cap_w}x${cap_h} at the screen center. Make the app
+     you're filming FILL it — full width AND full height. Empty space below
+     your content becomes dead black bars in the final TikTok (a terminal
+     anchored to the top half wastes half the frame); maximise the window
+     and pull the prompt to the top so output grows into the whole column.
+   ➜ Press  q  then Enter to stop (or Ctrl-C).
 INFO
+
+# This recorder usually films the very terminal it's launched from, so its
+# own banner above would otherwise be baked into the opening frames (remy
+# then has to trim it). Give the creator a moment to read it, then clear the
+# screen so the capture opens on a clean prompt. COUNTDOWN=0 skips the wait.
+COUNTDOWN="${COUNTDOWN:-3}"
+if [[ "$COUNTDOWN" -gt 0 ]] 2>/dev/null; then
+    for ((i=COUNTDOWN; i>0; i--)); do
+        printf '\r   ➜ recording in %ss… ' "$i"; sleep 1
+    done
+fi
+clear 2>/dev/null || printf '\033c'
+sleep 0.3   # let the compositor paint the cleared screen before frame 1
 
 cmd=(ffmpeg -hide_banner -loglevel warning -stats
      -f x11grab -framerate "$FPS" -draw_mouse "$DRAW_MOUSE"

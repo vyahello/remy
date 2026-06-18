@@ -254,7 +254,7 @@ Then produce two things:
    - LEAD with the payoff in plain language — what the viewer gains and
      how they'd use it. Name the tool and what it does FOR them.
      GOOD: "btop is the system monitor your terminal deserves — live CPU,
-     RAM and network in one glance. Just run: btop"
+     RAM and network in one glance, no more juggling top and free 📊"
      TOO DRY (documentation, avoid): "btop is a resource monitor that
      displays CPU, memory, disks, network and processes and has a menu."
    - ONE idea only. Pick the single best takeaway; don't list every
@@ -262,8 +262,14 @@ Then produce two things:
    - Real names from the frames, never invented. No vague hype ("check
      this out", "so cool", "game changer", "mind blown") and no fake
      urgency — it's a confident tip, not clickbait.
-   - End with the concrete action when the video shows one, phrased
-     simply: "Run: btop" / "Try: <command>". Grounded in what's on screen.
+   - DO NOT paste a raw command, flag string or code snippet into the
+     caption ("Try: echo ... | sd ...", "Run: btop -x"). It reads like
+     documentation, breaks on TikTok's plain-text box, and the viewer is
+     already watching it happen on screen. Instead close on the PAYOFF —
+     what it replaces or saves them ("the find-and-replace sed always
+     should've been", "one glance instead of three commands", "no more
+     escaping regex"). Naming the tool bare so they can search it is fine
+     (sd, btop); a full invocation is not.
    - Confident, natural English.
    - EMOJI: use one or two RELEVANT emoji that fit the topic and give the
      caption visual punch (e.g. 💻 🖥️ ⚡ 📊 📈 🔥 🛠️ 🚀 🐧 ⌨️) — place them
@@ -277,12 +283,31 @@ Then produce two things:
    language/domain, then ONE broad educational-reach tag that genuinely
    fits (#tutorial #howto #coding #tech #learnontiktok). Every tag must
    match what's shown. No sensational or policy-risky tags
-   (no hack/exploit/attack/etc.).
+   (no hack/exploit/attack/etc.). Avoid hashtags TikTok suppresses or
+   has retired — including #commandline, #command, #cli — they tank
+   reach; reach the same audience with #terminal #linux #programming
+   instead. Prefer concrete tags (#rust, #neovim, #bash) over vague ones.
 
 Reply with ONLY a JSON object, no other text:
 {{"description": "<the precise, useful teaching caption>",
  "hashtags": ["#tag1", "#tag2", "..."]}}
 """
+
+
+# A trailing "Try: <command>" / "Run: …" / "Just run: …" tail — a raw
+# invocation pasted onto the end of the caption. The viewer is already
+# watching it run on screen, so it's noise that reads like documentation;
+# strip it as a safety net even when the prompt asks Claude not to add one.
+# Requires the imperative label + a colon ("Try:", "Run:", "Just run:") so
+# it can't eat ordinary prose ("run ripgrep instead", "use -s for literal
+# strings") that happens to contain the verb.
+_CMD_TAIL_RE = re.compile(
+    r"""[\s.,;:—–-]*                       # trailing separators before tail
+        \b(?:just\s+)?(?:try|run|do)(?:\s+this)?\s*:\s   # "Try:" "Just run:"
+        \S.*$                              # …the command itself, to EOL
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def clean_description(text: str) -> str:
@@ -291,11 +316,23 @@ def clean_description(text: str) -> str:
     TikTok renders the caption as plain text, so backticks / asterisks and
     wrapping quotes (which Claude sometimes adds around tool names) come
     out as garbage. Drop them; keep underscores so snake_case names like
-    solarized_dark survive, and keep emoji.
+    solarized_dark survive, and keep emoji. Also strips a trailing
+    "Try: <command>" tail (see _CMD_TAIL_RE) — a raw paste the viewer is
+    already watching run.
     """
     s = str(text).strip()
     s = s.replace("`", "").replace("*", "")
     s = s.strip().strip('"').strip("“”").strip("'").strip()
+    # Pull any trailing emoji off, strip the command tail, reattach them —
+    # so "…no escaping. Try: sd 's' '' 🦀" keeps the 🦀 but loses the paste.
+    i = len(s)
+    while i > 0 and (s[i - 1].isspace() or ord(s[i - 1]) > 0x2600):
+        i -= 1
+    core, trailing = s[:i].rstrip(), s[i:].strip()
+    stripped = _CMD_TAIL_RE.sub("", core).strip()
+    if stripped:  # don't let the tail eat the whole caption
+        core = stripped
+    s = f"{core} {trailing}".strip() if trailing else core
     return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
@@ -339,9 +376,16 @@ the dead edges. Things that are NOT content and should be trimmed off:
 - the screen-recording / streaming app itself at the start or end (e.g.
   OBS Studio, with its preview panels, scene list and Start/Stop Recording
   buttons) — the creator alt-tabs to it to start and stop the capture;
+- a command-line recorder's OWN startup banner printed into the terminal
+  before the demo begins — lines like a script name (record_*.sh), a
+  "Recording…" / "Press q to stop" prompt, capture settings (fps, "9:16
+  slice", "lanczos-scaled"), or the output file path. The real demo
+  starts at the FIRST clean shell prompt after that banner;
 - a long idle gap before the real app/terminal is actually used;
 - trailing frames after the thing being demonstrated has closed (the app
-  quit, a help dump, an empty prompt, the recorder UI reappearing).
+  quit, a help dump, the recorder UI reappearing) — and a tail of EMPTY
+  shell prompts after the last command's output: end on the frame that
+  still shows the final result, not on a bare blinking prompt.
 
 Report, in SOURCE seconds:
 - start: when the real demonstration begins (the app/terminal in use).
@@ -407,12 +451,26 @@ def detect_content_window(video: str, duration: float) -> tuple[float, float]:
 
 MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight
 
+# Hashtags TikTok suppresses, has retired, or that draw a moderation cloud
+# over the whole post — they look topical but tank reach, so never emit
+# them even if Claude proposes one. Matched on the bare (lowercased,
+# punctuation-stripped) tag. Keep this dev/tech-focused and conservative:
+# only tags that are genuinely dead weight, never merely broad ones.
+BLOCKED_HASHTAGS = frozenset({
+    "commandline", "command", "cli",   # the report: #commandline is dead
+    "fyp", "foryou", "foryoupage",     # spammy, ignored, can look botted
+    "viral", "trending", "follow", "followme", "like4like", "follow4follow",
+})
+
 
 def clean_hashtags(raw: object) -> list[str]:
     """Normalize, de-dupe, moderation-filter and cap Claude's hashtags.
 
     Order is preserved (Claude is told to put the most relevant first),
-    so the cap keeps the strongest MAX_HASHTAGS tags.
+    so the cap keeps the strongest MAX_HASHTAGS tags. Tags in
+    BLOCKED_HASHTAGS or that trip the caption moderation check are dropped
+    — a suppressed/flagged tag hurts reach the same way the description
+    wording does.
     """
     if not isinstance(raw, list):
         return []
@@ -422,6 +480,8 @@ def clean_hashtags(raw: object) -> list[str]:
         tag = re.sub(r"[^0-9A-Za-z_]", "", tag).lower()
         if not tag or not re.search(r"[a-z]", tag) or len(out) >= MAX_HASHTAGS:
             continue  # need at least one letter — "#1" is useless
+        if tag in BLOCKED_HASHTAGS:
+            continue  # TikTok-suppressed / spammy — drop, never substitute
         hashed = "#" + tag
         # a flagged term in a hashtag hurts reach the same way — drop it
         if check_caption(tag) or hashed in out:
