@@ -153,27 +153,47 @@ about risky terms — heed the warnings:
 ## Recording a screen clip (local helper)
 
 `scripts/record_tiktok_screen.sh` captures an X11 screen straight into a
-pristine **1080x1920** source ready for remy. Your laptop screen is
-landscape, so it grabs the tallest centered **9:16 column** and upscales it
-to 1080x1920 with lanczos — arrange the app you're filming in the middle of
-the screen. Default quality is **visually-lossless 10-bit 4:4:4 H.264**
-(CRF 14), no audio.
+pristine source ready for remy, in either orientation:
+
+- **vertical** (default) → **1080x1920** (9:16) — TikTok full-screen, remy
+  adds a caption. Grabs the tallest centered 9:16 column of your screen.
+- **landscape** → **1920x1080** (16:9) — kept native by remy; best for
+  terminals & screen recordings (wide content fills the frame, no dead
+  bars). Grabs the widest centered 16:9 region.
+
+Each is upscaled to its exact output size with lanczos. Before capture it
+**draws the chosen region on screen as a bright green frame** so you can drag
+your window into it instead of guessing where the recording lands, then press
+Enter to start. Default quality is **visually-lossless 10-bit 4:4:4 H.264**
+(CRF 14), no audio. The dead **first 2 s and last 2 s are auto-trimmed** off
+the result (`TRIM_HEAD` / `TRIM_TAIL`).
 
 ```bash
-scripts/record_tiktok_screen.sh                 # record until you press q
+scripts/record_tiktok_screen.sh                 # interactive vertical, q to stop
+scripts/record_tiktok_screen.sh landscape       # interactive 16:9
+scripts/record_tiktok_screen.sh start landscape # record in the BACKGROUND
+scripts/record_tiktok_screen.sh stop            # stop it (from any directory)
+scripts/record_tiktok_screen.sh status          # is one running?
+scripts/record_tiktok_screen.sh install         # → ~/.local/bin/remy-rec (run anywhere)
 DURATION=30 scripts/record_tiktok_screen.sh     # auto-stop after 30 s
-ENCODER=nvenc scripts/record_tiktok_screen.sh   # GPU encode (long sessions)
 ```
 
-Stop with `q`↵ (or Ctrl-C); the file is finalized either way — capture goes
-to a fragmented `*.part.mp4` that stays playable even if the recorder is killed
-mid-session, then is losslessly remuxed into the final faststart MP4 on stop.
-(If a hard crash ever leaves a `*.part.mp4` behind, it's still a valid video —
-just rename it to `.mp4`.) Tune via env
-vars: `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`),
-`PRESET`, `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `REGION` (`WxH+X+Y` to
-grab an exact rectangle instead of the auto 9:16 column). It then prints the
-`remy` command to edit the result. X11 only (Wayland: use `wf-recorder`).
+The interactive mode records in the foreground (stop with `q`↵ or Ctrl-C).
+`start`/`stop` run it **detached in the background** so your terminal stays
+free — `start` it, do your demo in the same shell, `stop` it from anywhere.
+After `install`, `remy-rec start` / `remy-rec stop` work in any directory; the
+clip lands in your current directory.
+
+The file is finalized however it stops — capture goes to a fragmented
+`*.part.mp4` that stays playable even if the recorder is killed mid-session,
+then is losslessly remuxed into the final faststart MP4 and trimmed. (If a
+hard crash ever leaves a `*.part.mp4` behind, it's still a valid video — just
+rename it to `.mp4`.) Tune via env vars: `ORIENT` (`vertical`|`landscape`),
+`FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`), `PRESET`,
+`OUTDIR`, `DRAW_MOUSE` (1=show cursor), `TRIM_HEAD`/`TRIM_TAIL` (2), `GUIDE`
+(0 to skip the frame), `REGION` (`WxH+X+Y` to grab an exact rectangle). It then
+prints the `remy` command to edit the result. X11 only (Wayland: use
+`wf-recorder`).
 
 ## Quality notes
 
