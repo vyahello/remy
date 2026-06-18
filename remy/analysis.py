@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from collections.abc import Callable
 
 import numpy as np
 
@@ -82,15 +83,20 @@ def saliency_map(frames: np.ndarray) -> np.ndarray:
     f = frames.astype(np.float32)
     diff = np.abs(np.diff(f, axis=0))
     motion = 0.6 * diff.mean(axis=0) + 0.4 * diff.max(axis=0)
-    mean_frame = f.mean(axis=0)
-    gy, gx = np.gradient(mean_frame)
+    # Brightness is PEAK-weighted, not just averaged: a region that holds
+    # content at ANY point must be dodged — including a results screen that
+    # only lights up at the payoff (the last few seconds of a long clip).
+    # Averaging that away would invite the caption right onto the climax.
+    # The mean term keeps a steadily-lit area from being undersold.
+    bright = 0.6 * f.max(axis=0) + 0.4 * f.mean(axis=0)
+    gy, gx = np.gradient(bright)
     edges = np.hypot(gx, gy)
 
     def norm(a: np.ndarray) -> np.ndarray:
         m = np.percentile(a, 98)
         return np.clip(a / m, 0, 1) if m > 0 else a
 
-    return 0.4 * norm(motion) + 0.15 * norm(edges) + 0.45 * norm(mean_frame)
+    return 0.4 * norm(motion) + 0.15 * norm(edges) + 0.45 * norm(bright)
 
 
 def smooth(scores: np.ndarray) -> np.ndarray:
@@ -146,7 +152,13 @@ def to_segments(
     return merged
 
 
-def trim_dead_ends(segs: list[Segment]) -> list[Segment]:
+BRIGHT_TAIL_RATIO = 1.35  # tail this much brighter than the dimmest = content
+
+
+def trim_dead_ends(
+    segs: list[Segment],
+    seg_brightness: Callable[[Segment], float] | None = None,
+) -> list[Segment]:
     """Open and close on action: hard-trim boring footage at the edges.
 
     A boring opener kills retention in the first second and a boring
@@ -154,14 +166,35 @@ def trim_dead_ends(segs: list[Segment]) -> list[Segment]:
     1.5s beat of context. At the tail, short non-action segments (the
     "stop the recording" shuffle) are dropped entirely so the video ends
     on the win — long ones are cut to a 1.0s beat instead.
+
+    `seg_brightness` (when given) maps a segment to its mean luma. It lets
+    the tail-trim tell the **payoff** apart from dead time: a low-motion
+    tail that is still BRIGHT is content the viewer is meant to read — a
+    results screen, a reveal, the highlighted answer — not the empty
+    prompt / recorder UI of the stop-recording shuffle. Such a tail is
+    kept (and nudged off the fastest tier so it stays readable) instead of
+    being dropped. Without brightness info the original behaviour stands.
     """
     if segs and segs[0][2] == 0 and segs[0][1] - segs[0][0] > 2.0:
         segs[0][0] = segs[0][1] - 1.5
+    floor = (min(seg_brightness(s) for s in segs)
+             if seg_brightness and segs else 0.0)
+
+    def is_payoff(seg: Segment) -> bool:
+        return (seg_brightness is not None
+                and seg_brightness(seg) > floor * BRIGHT_TAIL_RATIO)
+
     if any(s[2] == 2 for s in segs):
         while (len(segs) > 1 and segs[-1][2] != 2
                and segs[-1][1] - segs[-1][0] <= 6.0):
+            if is_payoff(segs[-1]):
+                break  # the on-screen result — keep it, don't end before it
             segs.pop()
-    if segs and segs[-1][2] == 0 and segs[-1][1] - segs[-1][0] > 1.5:
+    if segs and segs[-1][2] != 2 and is_payoff(segs[-1]):
+        # readable, not a 3.2x flash: a held result plays at lag speed
+        if segs[-1][2] == 0:
+            segs[-1][2] = 1
+    elif segs and segs[-1][2] == 0 and segs[-1][1] - segs[-1][0] > 1.5:
         segs[-1][1] = segs[-1][0] + 1.0
     return segs
 

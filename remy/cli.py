@@ -12,6 +12,8 @@ import numpy as np
 
 from . import __version__
 from .analysis import (
+    BRIGHT_TAIL_RATIO,
+    SAMPLE_FPS,
     SCREEN_ACTION_MAX,
     assign_speeds,
     auto_target,
@@ -156,8 +158,29 @@ def plan(
     # the capture tool's UI (OBS & friends) — hard-trim both
     dur = src["duration"]
     head, dur_eff = edit_window(dur, is_landscape(src), trim_start, trim_end)
+    # mean luma of a segment from the analysis frames (sampled at SAMPLE_FPS
+    # over the full source) — lets trim_dead_ends keep a bright payoff tail
+    # (a results screen / reveal) instead of mistaking it for dead time.
+    afps = frames.shape[0] / dur if dur > 0 else SAMPLE_FPS
+
+    def seg_brightness(seg: list[float]) -> float:
+        a = int(seg[0] * afps)
+        b = max(a + 1, int(seg[1] * afps))
+        return float(frames[a:b].mean())
+
+    # edit_window blindly drops a trailing beat as the stop-recording
+    # shuffle. When that tail is actually bright content — a held result, a
+    # highlighted answer — give it back; only a dark put-down / empty-prompt
+    # tail should auto-trim (a screen recorder already self-trims its tail,
+    # so a second blind cut here would eat the payoff). Explicit --trim-end
+    # is always honoured.
+    if not is_landscape(src) and trim_end == 0.0 and 0.0 < dur_eff < dur:
+        dark = float(np.percentile(frames.mean(axis=(1, 2)), 10))
+        if seg_brightness([dur_eff, dur]) > dark * BRIGHT_TAIL_RATIO:
+            dur_eff = max(dur_eff, dur - 0.3)
+
     runs = trim_dead_ends(
-        to_segments(classify(scores), duration=dur_eff))
+        to_segments(classify(scores), duration=dur_eff), seg_brightness)
     if head:
         runs = [[max(s, head), e, t] for s, e, t in runs if e > head]
     # screen-recording action stays followable at a mild speed-up;

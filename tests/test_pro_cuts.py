@@ -70,6 +70,25 @@ def test_trim_dead_ends_no_action_keeps_tail():
     assert len(out) == 2
 
 
+def test_trim_dead_ends_keeps_bright_payoff_tail():
+    # a low-motion but BRIGHT tail (a results screen / highlighted answer)
+    # is the payoff — keep it, and lift it off the fastest tier so it reads
+    bright = {(10.0, 14.0): 40.0}  # tail is bright; everything else dark
+    segs = [[0.0, 10.0, 2], [10.0, 14.0, 0]]
+    out = A.trim_dead_ends(
+        segs, lambda s: bright.get((s[0], s[1]), 5.0))
+    assert out[-1][1] == pytest.approx(14.0)  # tail kept, not dropped/cut
+    assert out[-1][2] == 1  # bumped dead->lag so it isn't a 3.2x flash
+
+
+def test_trim_dead_ends_drops_dark_tail_even_with_brightness():
+    # a dark trailing beat (empty prompt / stop-recording shuffle) still goes
+    segs = [[0.0, 10.0, 2], [10.0, 12.4, 1]]
+    out = A.trim_dead_ends(segs, lambda s: 5.0)  # uniformly dark
+    assert out[-1][2] == 2
+    assert out[-1][1] == 10.0
+
+
 # ---------------------------------------------------------------- hook
 
 def test_pick_hook_finds_peak():

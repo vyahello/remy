@@ -48,7 +48,13 @@ def auto_caption_y(
     best_y, best_score = y_lo, float("inf")
     for y in range(y_lo, max(y_lo + 1, y_hi), 16):
         band = canvas[y // gs:(y + cap_h) // gs, cx0:cx1]
-        score = float(band.mean())
+        # Blend the band's MEAN with its PEAK: a band that merely clips the
+        # edge of content (sparse digits in a results table, the tail of a
+        # word) has a low mean but a high peak, so peak rejects it in favour
+        # of a band that's empty everywhere. Without this the caption settles
+        # over sparse-but-real content because the black between glyphs
+        # averages the mean down.
+        score = 0.5 * float(band.mean()) + 0.5 * float(band.max())
         score += 0.06 * (y - y_lo) / max(1, y_hi - y_lo)
         if score < best_score:
             best_score, best_y = score, y
