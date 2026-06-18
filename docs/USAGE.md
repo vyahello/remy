@@ -159,7 +159,11 @@ pristine source ready for remy, in either orientation:
   adds a caption. Grabs the tallest centered 9:16 column of your screen.
 - **landscape** → **1920x1080** (16:9) — kept native by remy; best for
   terminals & screen recordings (wide content fills the frame, no dead
-  bars). Grabs the widest centered 16:9 region.
+  bars). Grabs the widest centered 16:9 region (on a 16:10 laptop panel
+  this drops a thin top/bottom margin).
+- **full** → your **whole screen at its native size** (e.g. **1920x1200**
+  on a 16:10 laptop), no aspect cropping, captured 1:1. Also kept native
+  by remy.
 
 Each is upscaled to its exact output size with lanczos. Before capture it
 **draws the chosen region on screen as a bright green frame** so you can drag
@@ -171,6 +175,7 @@ the result (`TRIM_HEAD` / `TRIM_TAIL`).
 ```bash
 scripts/record_tiktok_screen.sh                 # interactive vertical, q to stop
 scripts/record_tiktok_screen.sh landscape       # interactive 16:9
+scripts/record_tiktok_screen.sh full            # interactive whole screen (e.g. 1920x1200)
 scripts/record_tiktok_screen.sh start landscape # record in the BACKGROUND
 scripts/record_tiktok_screen.sh stop            # stop it (from any directory)
 scripts/record_tiktok_screen.sh status          # is one running?
@@ -188,7 +193,7 @@ The file is finalized however it stops — capture goes to a fragmented
 `*.part.mp4` that stays playable even if the recorder is killed mid-session,
 then is losslessly remuxed into the final faststart MP4 and trimmed. (If a
 hard crash ever leaves a `*.part.mp4` behind, it's still a valid video — just
-rename it to `.mp4`.) Tune via env vars: `ORIENT` (`vertical`|`landscape`),
+rename it to `.mp4`.) Tune via env vars: `ORIENT` (`vertical`|`landscape`|`full`),
 `FPS` (60), `CRF` (14), `ENCODER` (`x264`|`x265`|`nvenc`|`lossless`), `PRESET`,
 `OUTDIR`, `DRAW_MOUSE` (1=show cursor), `TRIM_HEAD`/`TRIM_TAIL` (2), `GUIDE`
 (0 to skip the frame), `REGION` (`WxH+X+Y` to grab an exact rectangle). It then
