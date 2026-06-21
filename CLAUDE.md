@@ -58,22 +58,37 @@ edited clip ready to post (see `docs/IDEAS.md`).
    seconds. Default is `--target auto` (`analysis.auto_target`): natural
    pacing ≤35s is kept, longer compresses toward the ~30s completion-rate
    sweet spot, floored by the 1x action time (action is never sped up).
-   `--target none` keeps base tier speeds.
+   `--target none` keeps base tier speeds. The dead/lag fast-forward is
+   capped at `MAX_SPEED` (6x) for **screen** content (text is legible at
+   any speed) but at `CAMERA_FAST_MAX` (4x) for **handheld camera** footage
+   — past ~4x a phone-filmed desk smears into an unwatchable blur
+   (`assign_speeds(..., max_fast_speed=…)`, chosen in `cli.plan`).
 6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
-   renders purple bold-italic on rounded white boxes + color emoji. A
-   saliency map places it over the calmest region across the **whole**
-   TikTok safe zone (`auto_caption_y`). The map (`analysis.saliency_map`)
-   weights **temporal motion** (per-pixel mean+peak change — where you
-   type/scroll) co-equally with **brightness** (screens glow in dark-room
-   footage), plus edges, so the caption dodges what's *changing* as much
-   as what's *bright*. A mild top bias only breaks ties: a uniformly calm
-   frame rides high on the black bar, but a busy/bright top (a laptop
-   screen filling the upper frame) pushes the caption down onto the still
-   region below — the dark keyboard, a hand — never over the text being
-   typed. `caption.check_caption` warns about wording that risks
+   renders a heavy **upright** sans (Open Sans ExtraBold, falling back to
+   DejaVu/Liberation; `REMY_FONT` overrides) in the style colour on rounded
+   pills with an accent keyline, a thin glyph stroke and a real blurred
+   drop-shadow + color emoji — punchy and TikTok-native, never covering the
+   action. Placement (`compute_layout`) picks by geometry: **wide-in-vertical
+   content** (terminals/code, which fill the frame top-to-bottom over time)
+   **parks** the caption on clean canvas *below* a top-pinned video — off
+   the content for good; **tall near-9:16 footage** that would pillarbox if
+   shrunk keeps the saliency **overlay** (`auto_caption_y`) on the calmest
+   region. The saliency map (`analysis.saliency_map`) weights **temporal
+   motion** (per-pixel mean+peak change — where you type/scroll) co-equally
+   with **brightness** (screens glow in dark-room footage), plus edges, so
+   the overlay dodges what's *changing* as much as what's *bright* (the dark
+   keyboard, a hand — never the text being typed). A mild top bias only
+   breaks ties. `caption.check_caption` warns about wording that risks
    TikTok moderation.
 7. **Audio** — muted by default (the export is silent so a TikTok sound is
-   added in-app; `render` emits `-an`). `--keep-audio` retains the original
+   added in-app; `render` emits `-an`). **The bot's audio UI is currently
+   parked** behind `bot.features.audio_enabled()` (env `REMY_AUDIO`, default
+   off): the music/ambient buttons are hidden, `validate_updates` drops any
+   audio change, and `_render_and_deliver` hard-mutes — so a half-built
+   music feature can't slip onto an export. None of the audio code below is
+   removed; `REMY_AUDIO=on` brings the whole UI + baked-audio path straight
+   back. The CLI `--keep-audio` / `--music` flags are unaffected.
+   `--keep-audio` retains the original
    ambient track; `--music` (`music.generate`) synthesizes a royalty-free
    synthwave/phonk track and `render` ducks it under the ambient audio with
    `amix ... normalize=0`; any kept audio is loudness-normalized to

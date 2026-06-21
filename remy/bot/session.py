@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from ..analysis import AUTO_SWEET
 from ..caption import DEFAULT_STYLE, STYLES
 from ..music import STYLE_BPM
+from .features import audio_enabled
 
 VALID_CAPTION_POS = ("auto", "top", "bottom")
 VALID_MUSIC = ("synthwave", "phonk", "off")
@@ -143,21 +144,29 @@ def validate_updates(raw: dict) -> dict:
     if isinstance(style, str) and style in STYLES:
         out["style"] = style
 
-    for key in ("hook", "crop", "look", "keep_audio"):
+    for key in ("hook", "crop", "look"):
         val = raw.get(key)
         if isinstance(val, bool):
             out[key] = val
 
-    music = raw.get("music")
-    if isinstance(music, str) and music in VALID_MUSIC:
-        out["music_style"] = None if music == "off" else music
+    # Audio (music + ambient) is parked unless REMY_AUDIO is set. While it's
+    # off, drop every audio update here — the one hard gate — so a stray
+    # "add phonk" from a button or free text can't bake a track onto an
+    # export that's meant to stay silent. The music CODE stays intact.
+    if audio_enabled():
+        if isinstance(raw.get("keep_audio"), bool):
+            out["keep_audio"] = raw["keep_audio"]
 
-    bpm = raw.get("music_bpm")
-    if isinstance(bpm, (int, float)) and not isinstance(bpm, bool):
-        out["music_bpm"] = int(min(MAX_BPM, max(MIN_BPM, bpm)))
+        music = raw.get("music")
+        if isinstance(music, str) and music in VALID_MUSIC:
+            out["music_style"] = None if music == "off" else music
 
-    if raw.get("new_music_mix") is True:
-        out["new_music_mix"] = True
+        bpm = raw.get("music_bpm")
+        if isinstance(bpm, (int, float)) and not isinstance(bpm, bool):
+            out["music_bpm"] = int(min(MAX_BPM, max(MIN_BPM, bpm)))
+
+        if raw.get("new_music_mix") is True:
+            out["new_music_mix"] = True
 
     return out
 

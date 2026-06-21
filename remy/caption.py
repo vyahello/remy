@@ -1,21 +1,40 @@
 """Caption rendering (Pillow) and TikTok-eligibility checks."""
 
+import os
 import re
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-FONT_TEXT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
+# Caption face: a heavy UPRIGHT sans reads as cleaner and more "TikTok
+# native" than the old bold-OBLIQUE DejaVu (which skewed meme-y). First
+# installed wins; the last entry always exists on the dev/CI image, so the
+# font-gated tests still have something to skip on. Override with REMY_FONT.
+_FONT_CANDIDATES = [
+    os.environ.get("REMY_FONT", ""),
+    "/usr/share/fonts/truetype/open-sans/OpenSans-ExtraBold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+]
+FONT_TEXT = next((p for p in _FONT_CANDIDATES if p and os.path.exists(p)),
+                 _FONT_CANDIDATES[-1])
 FONT_EMOJI = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
 
 RGBA = tuple[int, int, int, int]
 
-# Caption style presets: name -> (text color, box fill). "purple" is the
+# Caption style presets. Each is text colour + pill fill + a hairline
+# accent keyline + a thin glyph stroke (keeps letters crisp where they meet
+# the pill edge / busy footage behind a translucent fill). "purple" is the
 # house default; the others are high-contrast alternates pickable via
 # --style or a bot redo ("yellow caption").
-STYLES: dict[str, tuple[RGBA, RGBA]] = {
-    "purple": ((147, 88, 235, 255), (252, 250, 255, 238)),  # on white
-    "yellow": ((24, 22, 16, 255), (250, 214, 40, 242)),     # black on yellow
-    "black": ((250, 250, 250, 255), (18, 18, 22, 215)),     # white on black
+Style = dict[str, RGBA]
+STYLES: dict[str, Style] = {
+    "purple": {"text": (124, 58, 237, 255), "fill": (255, 255, 255, 242),
+               "accent": (124, 58, 237, 105), "stroke": (124, 58, 237, 60)},
+    "yellow": {"text": (20, 18, 12, 255), "fill": (250, 209, 34, 246),
+               "accent": (20, 18, 12, 70), "stroke": (20, 18, 12, 45)},
+    "black": {"text": (255, 255, 255, 255), "fill": (16, 16, 20, 224),
+              "accent": (255, 255, 255, 60), "stroke": (0, 0, 0, 150)},
 }
 DEFAULT_STYLE = "purple"
 
@@ -112,15 +131,23 @@ def make_caption(
     text: str, out_path: str, font_size: int = 54,
     style: str = DEFAULT_STYLE,
 ) -> tuple[int, int]:
-    """Stacked rounded boxes with bold-italic text + emoji.
+    """Stacked rounded pills with heavy upright text + color emoji.
 
-    `style` picks a STYLES preset (text color + box fill).
-    Returns (width, height) of the saved PNG.
+    `style` picks a STYLES preset (text colour, pill fill, accent keyline
+    and a thin glyph stroke). A real soft drop-shadow (blurred silhouettes)
+    sits behind the pills so the caption lifts off busy footage without a
+    hard black halo. Returns (width, height) of the saved PNG — the size
+    includes a transparent margin for the shadow bleed, so layout keeps it
+    centred.
     """
-    text_color, box_fill = STYLES.get(style, STYLES[DEFAULT_STYLE])
+    st = STYLES.get(style, STYLES[DEFAULT_STYLE])
+    text_color, box_fill = st["text"], st["fill"]
+    accent, stroke = st["accent"], st["stroke"]
     font = ImageFont.truetype(FONT_TEXT, font_size)
     lines = balance_lines(text)
-    pad_x, pad_y, gap, radius = 30, 16, 12, 20
+    pad_x, pad_y, gap, radius = 34, 18, 14, 26
+    sw = max(1, round(font_size / 42))      # glyph outline width
+    margin = 26                             # transparent room for the shadow
     ascent, descent = font.getmetrics()
     line_h = ascent + descent
 
@@ -142,24 +169,41 @@ def make_caption(
                 width += w
         rendered.append((parts, width))
 
-    canvas_w = max(w for _, w in rendered) + 2 * pad_x + 8
     box_h = line_h + 2 * pad_y
-    canvas_h = len(rendered) * box_h + (len(rendered) - 1) * gap + 8
-    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
+    block_w = max(w for _, w in rendered) + 2 * pad_x + 2 * sw
+    block_h = len(rendered) * box_h + (len(rendered) - 1) * gap + 2 * sw
+    canvas_w, canvas_h = block_w + 2 * margin, block_h + 2 * margin
 
-    y = 2
+    # lay out each line's pill rect once, reused by the shadow + main pass
+    rows: list[tuple[list, int, int, int]] = []
+    y = margin + sw
     for parts, width in rendered:
-        bx = (canvas_w - width - 2 * pad_x) // 2
-        # soft shadow then box
-        d.rounded_rectangle([bx + 3, y + 4, bx + width + 2 * pad_x + 3,
-                             y + box_h + 4], radius, fill=(0, 0, 0, 70))
-        d.rounded_rectangle([bx, y, bx + width + 2 * pad_x, y + box_h],
-                            radius, fill=box_fill)
+        bw = width + 2 * pad_x
+        bx = (canvas_w - bw) // 2
+        rows.append((parts, bx, y, bw))
+        y += box_h + gap
+
+    # soft drop shadow: blurred pill silhouettes behind everything
+    shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    for _parts, bx, y, bw in rows:
+        sd.rounded_rectangle([bx, y + 8, bx + bw, y + box_h + 8],
+                             radius, fill=(0, 0, 0, 140))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(9))
+
+    img = Image.alpha_composite(
+        Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0)), shadow)
+    d = ImageDraw.Draw(img)
+    for parts, bx, y, bw in rows:
+        d.rounded_rectangle([bx, y, bx + bw, y + box_h], radius, fill=box_fill)
+        if accent[3]:
+            d.rounded_rectangle([bx, y, bx + bw, y + box_h], radius,
+                                outline=accent, width=2)
         x = bx + pad_x
         for part in parts:
             if part[0] == "txt":
-                d.text((x, y + pad_y), part[1], font=font, fill=text_color)
+                d.text((x, y + pad_y), part[1], font=font, fill=text_color,
+                       stroke_width=sw, stroke_fill=stroke)
                 x += part[2]
             else:
                 tile = part[1]
@@ -167,7 +211,6 @@ def make_caption(
                           (x + 4, y + pad_y + (line_h - tile.height) // 2),
                           tile)
                 x += tile.width + 10
-        y += box_h + gap
 
     img.save(out_path)
     return canvas_w, canvas_h

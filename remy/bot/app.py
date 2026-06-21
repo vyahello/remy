@@ -35,6 +35,7 @@ from ..judge import (
     suggest_post,
 )
 from .config import BotConfig, is_allowed, load_config
+from .features import audio_enabled
 from .pipeline import (
     delivery_name,
     friendly_progress,
@@ -72,6 +73,18 @@ def _short(text: str, n: int = 26) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+# Words that clearly mean "do something with the soundtrack" — used only to
+# answer an audio request gracefully while the feature is parked, instead of
+# running Claude and then silently changing nothing.
+_AUDIO_WORDS = ("music", "song", "track", "soundtrack", "phonk", "synthwave",
+                "melody", "bassline", "bpm", "audio", "volume", "mute", "beat")
+
+
+def _mentions_audio(text: str) -> bool:
+    low = text.lower()
+    return any(w in low for w in _AUDIO_WORDS)
+
+
 def format_post_kit(post: dict) -> str:
     """The paste-ready TikTok caption body (description + hashtags).
 
@@ -96,12 +109,14 @@ def setup_text(session: EditSession) -> str:
     if p.trim_start or p.trim_end:
         trim = (f"\n✂️ auto-trimmed −{p.trim_start:.0f}s intro / "
                 f"−{p.trim_end:.0f}s outro (tap ✂️ on Redo to adjust)")
+    audio = (f" · music {p.music_style or 'muted'}" if audio_enabled()
+             else " · 🔇 muted")
     return (
         "🎬 *Setup* — pick what you want, then tap *Render*.\n"
         f"{cap}\n"
         f"cold open {'on' if p.hook else 'off'} · length {length} · "
         f"zoom {'on' if p.crop else 'off'} · look "
-        f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}"
+        f"{'on' if p.look else 'off'}{audio}"
         f"{trim}")
 
 
@@ -147,11 +162,15 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     # the redo keyboard — tuning length is a post-render decision.
     rows.append([toggle("🪝", "Cold open", p.hook, "hook"),
                  toggle("🔍", "Zoom", p.crop, "crop")])
-    rows.append([toggle("✨", "Look", p.look, "look"),
-                 opt(pick(not p.music_style, "🔇", "Mute"), "nomusic")])
-    rows.append([opt(pick(p.music_style == "phonk", "🥁", "Phonk"), "phonk"),
-                 opt(pick(p.music_style == "synthwave", "🎹", "Synth"),
-                     "synthwave")])
+    if audio_enabled():
+        rows.append([toggle("✨", "Look", p.look, "look"),
+                     opt(pick(not p.music_style, "🔇", "Mute"), "nomusic")])
+        rows.append([
+            opt(pick(p.music_style == "phonk", "🥁", "Phonk"), "phonk"),
+            opt(pick(p.music_style == "synthwave", "🎹", "Synth"),
+                "synthwave")])
+    else:  # audio parked — Look stands alone, no music controls
+        rows.append([toggle("✨", "Look", p.look, "look")])
     rows.append([InlineKeyboardButton("🎬 Render", callback_data=RENDER)])
     return InlineKeyboardMarkup(rows)
 
@@ -162,10 +181,12 @@ def redo_text(session: EditSession) -> str:
     p = session.params
     n = session.revision + 1
     length = "auto" if p.target is None else f"~{p.target:.0f}s"
+    audio = (f" · music {p.music_style or 'muted'}" if audio_enabled()
+             else " · 🔇 muted")
     now = (f"now: length {length} · zoom {p.zoom:.2f}x · "
            f"crop {'on' if p.crop else 'off'} · cold open "
            f"{'on' if p.hook else 'off'} · look "
-           f"{'on' if p.look else 'off'} · music {p.music_style or 'muted'}")
+           f"{'on' if p.look else 'off'}{audio}")
     if p.trim_start or p.trim_end:
         now += f" · trim −{p.trim_start:.0f}s/−{p.trim_end:.0f}s"
     if session.staged_notes:
@@ -202,12 +223,13 @@ def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     if session.vertical:  # vertical exports can carry a caption
         buttons += [btn("✍️ New caption", "newcaption"),
                     btn("🎨 Next style", "style")]
-    # music section
-    buttons += [
-        btn("🥁 Phonk", "phonk"), btn("🎹 Synthwave", "synthwave"),
-        btn("🔥 Faster beat", "faster"), btn("🧊 Slower beat", "slower"),
-        btn("🎲 New mix", "remix"), btn("🔇 No music", "nomusic"),
-    ]
+    # music section — only when audio is enabled (REMY_AUDIO); parked for now
+    if audio_enabled():
+        buttons += [
+            btn("🥁 Phonk", "phonk"), btn("🎹 Synthwave", "synthwave"),
+            btn("🔥 Faster beat", "faster"), btn("🧊 Slower beat", "slower"),
+            btn("🎲 New mix", "remix"), btn("🔇 No music", "nomusic"),
+        ]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     # the render trigger sits on top, labelled with how much is stacked
     n = session.revision + 1
@@ -254,7 +276,7 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "screen you:\n"
         "• tap a caption idea, *type your own*, or *🚫 No caption*\n"
         "• flip the options you want — cold open (off by default), "
-        "length, zoom, look, music\n"
+        "zoom, look\n"
         "• tap *🎬 Render* when ready.\n"
         "📱 Vertical → 1080x1920. 🖥️ Landscape → native resolution, no "
         "baked caption (ideas are sent to copy instead).\n"
@@ -415,6 +437,10 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
         p = session.params
         base = os.path.splitext(os.path.basename(session.source))[0]
         out = os.path.join(cfg.workdir, f"{base}_remy_r{rev}.mp4")
+        # Hard mute while audio is parked: even if a stale music_style is on
+        # the session, force a silent export. validate_updates already drops
+        # audio changes; this is the belt-and-braces guarantee at the render.
+        audio_on = audio_enabled()
         try:
             await asyncio.to_thread(
                 edit, session.source, session.caption,
@@ -428,8 +454,8 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 crop_enabled=p.crop,
                 zoom=p.zoom,
                 look_enabled=p.look,
-                keep_audio=p.keep_audio,
-                music="__auto__" if p.music_style else None,
+                keep_audio=p.keep_audio and audio_on,
+                music="__auto__" if (audio_on and p.music_style) else None,
                 music_style=p.music_style or "synthwave",
                 music_bpm=p.music_bpm,
                 music_seed=p.music_seed,
@@ -773,6 +799,16 @@ async def on_feedback(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text(
             f"✍️ caption set: “{feedback}”\nTweak more or tap 🎬 Render.",
             reply_markup=setup_keyboard(session))
+        return
+
+    # Audio is parked: answer a music/sound request plainly rather than
+    # spend a Claude round-trip only to change nothing (validate drops it).
+    if not audio_enabled() and _mentions_audio(feedback):
+        await msg.reply_text(
+            "🔇 Audio's parked right now — exports stay silent so you can "
+            "drop a trending TikTok sound in the app (ranks better, no "
+            "copyright mutes). Music's coming back soon. Anything else to "
+            "tweak — shorter, tighter, a new caption?")
         return
 
     session.awaiting_feedback = False

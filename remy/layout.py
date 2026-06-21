@@ -61,32 +61,66 @@ def auto_caption_y(
     return best_y
 
 
+def _video_rect(src: SourceInfo, box_h: int) -> tuple[int, int]:
+    """Even (w, h) of the source scaled to fit OUT_W × box_h."""
+    scale = min(OUT_W / src["w"], box_h / src["h"])
+    return int(src["w"] * scale / 2) * 2, int(src["h"] * scale / 2) * 2
+
+
+# When auto placement parks the caption below the video, the video shrinks
+# just enough to open a clean gap inside the safe zone. Only do that while
+# the video still fills most of the width — a tall near-9:16 clip would
+# pillarbox into a stamp, so it keeps the on-video overlay instead.
+PARK_MIN_VW_FRAC = 0.85
+CAP_GAP_PAD = 24  # breathing room around a parked caption
+
+
 def compute_layout(
     src: SourceInfo,
     cap_size: tuple[int, int],
     pos: str,
     sal: np.ndarray | None = None,
 ) -> Layout:
-    """Video rect + caption position for pos in auto|top|bottom."""
+    """Video rect + caption position for pos in auto|top|bottom.
+
+    "auto" decides between two strategies by geometry:
+    - **park** (wide-in-vertical content — terminals, code, slides): the
+      video is pinned to the top and shrunk just enough to open a clean band
+      below it, where the caption sits on empty canvas. Such content fills
+      the frame top-to-bottom over its run, so an overlay would eventually
+      cover the very text the viewer needs — parking never does.
+    - **overlay** (tall near-9:16 footage that can't shrink without
+      pillarboxing — phone clips): the caption rides the calmest region of
+      the video (saliency), dodging the bright/active area.
+    """
     cap_w, cap_h = cap_size
-    if pos == "bottom":
-        box_h = min(VIDEO_BOX_H, OUT_H - TOP_PAD - cap_h - 40)
-    else:
-        box_h = OUT_H - 2 * TOP_PAD
-    scale = min(OUT_W / src["w"], box_h / src["h"])
-    vw = int(src["w"] * scale / 2) * 2
-    vh = int(src["h"] * scale / 2) * 2
+    safe_bottom = int(SAFE_BOTTOM * OUT_H)
+    # geometry of a top-pinned video that leaves a safe-zone caption gap
+    park_box_h = min(VIDEO_BOX_H, safe_bottom - TOP_PAD - cap_h - CAP_GAP_PAD)
+    pvw, pvh = _video_rect(src, max(2, park_box_h))
+
+    if pos == "auto":
+        assert sal is not None, "auto caption placement needs a saliency map"
+        if pvw >= PARK_MIN_VW_FRAC * OUT_W:
+            pos = "bottom"  # park below the video — off the content for good
+        else:  # overlay on the calmest band of a near-full-frame video
+            vw, vh = _video_rect(src, OUT_H - 2 * TOP_PAD)
+            lay: Layout = {"vw": vw, "vh": vh, "vx": (OUT_W - vw) // 2,
+                           "vy": (OUT_H - vh) // 2,
+                           "cap_x": (OUT_W - cap_w) // 2,
+                           "cap_y": int(SAFE_TOP * OUT_H) + 10}
+            lay["cap_y"] = auto_caption_y(sal, lay, cap_w, cap_h)
+            return lay
 
     if pos == "bottom":
         vy = TOP_PAD
-        cap_y = TOP_PAD + vh + (OUT_H - TOP_PAD - vh - cap_h) // 2
-    else:
-        vy = (OUT_H - vh) // 2
-        cap_y = int(SAFE_TOP * OUT_H) + 10  # default for "top"
+        cap_y = vy + pvh + (safe_bottom - vy - pvh - cap_h) // 2
+        return {"vw": pvw, "vh": pvh, "vx": (OUT_W - pvw) // 2, "vy": vy,
+                "cap_x": (OUT_W - cap_w) // 2, "cap_y": cap_y}
 
-    lay: Layout = {"vw": vw, "vh": vh, "vx": (OUT_W - vw) // 2,
-                   "cap_x": (OUT_W - cap_w) // 2, "vy": vy, "cap_y": cap_y}
-    if pos == "auto":  # dodge the action
-        assert sal is not None, "auto caption placement needs a saliency map"
-        lay["cap_y"] = auto_caption_y(sal, lay, cap_w, cap_h)
-    return lay
+    # "top" (and the no-caption centered export): video centered, caption
+    # pinned to the top of the safe zone
+    vw, vh = _video_rect(src, OUT_H - 2 * TOP_PAD)
+    return {"vw": vw, "vh": vh, "vx": (OUT_W - vw) // 2,
+            "vy": (OUT_H - vh) // 2, "cap_x": (OUT_W - cap_w) // 2,
+            "cap_y": int(SAFE_TOP * OUT_H) + 10}

@@ -149,27 +149,36 @@ sensational wording is banned, not the content itself).
 """
 
 CAPTION_PROMPT = CREATOR_CONTEXT + """
-You are a professional TikTok video editor writing the on-video caption.
+You are a sharp dev-tips creator writing the ON-VIDEO caption — the hook
+that burns into the first frame, the line a scroller reads in under a
+second and decides to stay for.
 
 Read (view) these frames, sampled in chronological order from one video:
 {frames}
 
-1. Work out what the video shows — name the exact tool/app/subject if
-   identifiable from UI text.
-2. Write ONE caption that makes a viewer stop scrolling.
+1. Work out exactly what the video TEACHES — name the precise tool / app /
+   command / subject from the on-screen UI text (never invent one).
+2. Write ONE caption in a tips-&-tricks / educational voice: the single
+   insight or payoff that makes someone think "I need this". Frame it as a
+   tip, a result, or a smarter way to do something — never a vague tease.
+
+Angles that land (pick the one the footage supports):
+- the tool + what it saves you: "btop: your whole system at a glance"
+- a reframe of a chore: "stop deleting duplicate files by hand"
+- a concrete capability: "find every duplicate file in one command"
 
 Hard rules for the caption:
 - max {max_chars} characters, plain text, no markdown/backticks, no
   hashtags, no surrounding quotes
-- specific beats clever: name the thing ("btop — the terminal system
-  monitor"), don't be vague ("check this out")
+- SPECIFIC and useful beats clever or hyped — name the thing, promise the
+  payoff; never "check this out", "so satisfying", "game changer"
 - no sensational or policy-risky wording (hack/hacking, attack, exploit,
   deauth, crack, bypass, spy, payload, steal, free wifi)
 - one or two RELEVANT emoji that match the topic (e.g. 💻 🖥️ ⚡ 📊 🔥 🐧
-  ⌨️ 🚀) for visual punch — at the end, and only if they fit; never forced
+  ⌨️ 🚀 🛠️) at the end — only if they fit; never forced
 
 Reply with ONLY a JSON object, no other text:
-{{"subject": "<what the video shows, one line>",
+{{"subject": "<what the video teaches, one line>",
  "caption": "<your best caption>",
  "alternatives": ["<option 2>", "<option 3>"]}}
 {avoid}"""
@@ -230,6 +239,11 @@ tech video. This is paste-ready text for the TikTok caption box — NOT an
 on-video overlay and NOT a review. Every video teaches a concrete tip,
 trick, tool, or workflow; the caption's job is to make a scroller
 understand WHAT they'll learn and HOW they could use it themselves.
+
+Write it STRAIGHT, in a tips-&-tricks or educational register depending on
+what the footage shows — a crisp tip when there's a clear shortcut/payoff,
+a "here's how this works" teach when it's a concept or walkthrough. No
+fluff, no hype, no clickbait: just the useful thing, said well.
 
 Read (view) these frames, sampled in chronological order from the
 FINISHED video:

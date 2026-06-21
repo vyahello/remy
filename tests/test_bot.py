@@ -231,7 +231,28 @@ def test_setup_keyboard_vertical_has_caption_choices_and_render():
     assert any("Cold open: off" in t for t in labels)  # default off, in words
     # exactly one caption choice is marked active; default = No caption
     assert any(t == "✅ No caption" for t in labels)
-    assert any(t == "✅ Mute" for t in labels)  # music muted by default
+    # audio is parked by default → no music controls in the picker
+    assert app.OPT + "nomusic" not in datas
+    assert app.OPT + "phonk" not in datas
+    assert not any("Mute" in t for t in labels)
+
+
+def test_setup_keyboard_shows_music_when_audio_enabled(monkeypatch):
+    monkeypatch.setenv("REMY_AUDIO", "on")
+    app = _app()
+    kb = app.setup_keyboard(_setup_session(vertical=True))
+    datas = _datas(kb)
+    assert app.OPT + "phonk" in datas and app.OPT + "synthwave" in datas
+    assert app.OPT + "nomusic" in datas
+
+
+def test_mentions_audio_detects_music_requests():
+    app = _app()
+    assert app._mentions_audio("add some phonk music")
+    assert app._mentions_audio("make the beat faster")
+    assert app._mentions_audio("turn the volume up")
+    assert not app._mentions_audio("make it shorter and tighter")
+    assert not app._mentions_audio("move the caption to the bottom")
 
 
 def test_setup_keyboard_landscape_has_no_caption_buttons():

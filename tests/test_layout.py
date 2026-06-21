@@ -60,6 +60,27 @@ def test_auto_uniform_busy_frame_sits_at_top():
     assert lay["cap_y"] <= int(L.SAFE_TOP * L.OUT_H) + 30
 
 
+def test_auto_parks_wide_short_below_video():
+    # a wide-in-vertical recording (a terminal cropped short) pins the video
+    # to the top and drops the caption onto clean canvas BELOW it — never
+    # overlapping the content, whatever the saliency map says
+    src = {"w": 952, "h": 1082, "duration": 40, "fps": 60, "audio": False}
+    cap_h = 288
+    sal = np.ones((100, 90), np.float32)  # content everywhere -> overlay risky
+    lay = L.compute_layout(src, (760, cap_h), "auto", sal)
+    assert lay["cap_y"] >= lay["vy"] + lay["vh"]          # below the video
+    assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
+    assert lay["vw"] >= 0.85 * L.OUT_W                    # stays wide
+
+
+def test_bottom_keeps_caption_below_video_in_safe_zone():
+    src = {"w": 952, "h": 1082, "duration": 40, "fps": 60, "audio": False}
+    cap_h = 288
+    lay = L.compute_layout(src, (760, cap_h), "bottom")
+    assert lay["cap_y"] >= lay["vy"] + lay["vh"]
+    assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
+
+
 def test_auto_drops_onto_calm_bottom():
     # the IMG_2110 case: bright/active laptop screen fills the top, the dark
     # keyboard + hand is calm below — the caption must leave the top half and

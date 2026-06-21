@@ -15,6 +15,11 @@ MIN_SEG_SEC = 1.4       # shorter runs get merged into a neighbour
 PCT_LOW, PCT_HIGH = 45, 80   # adaptive tier thresholds (percentiles)
 SPEED_DEAD, SPEED_LAG, SPEED_ACTION = 3.2, 1.7, 1.0
 MAX_SPEED = 6.0
+# Handheld camera footage (a phone filming a desk/device) smears into an
+# unwatchable blur past ~4x — fast-forwarding it should still read as the
+# same scene, just quicker. Screen recordings stay legible at MAX_SPEED
+# (text is text at any speed), so the cap is camera-only.
+CAMERA_FAST_MAX = 4.0
 
 
 def probe(path: str) -> SourceInfo:
@@ -481,6 +486,7 @@ def zoom_crop(
 def assign_speeds(
     segs: list[Segment], target: float | None = None,
     max_action_speed: float = 1.0,
+    max_fast_speed: float = MAX_SPEED,
 ) -> tuple[list[SpeedSegment], float]:
     """Map tiers to speeds; optionally solve for a target duration.
 
@@ -488,6 +494,9 @@ def assign_speeds(
     the fast tiers alone can't reach the target — screen-recording
     content (typing, scrolling output) stays perfectly followable at a
     mild speed-up, unlike camera footage, which keeps 1.0x.
+    `max_fast_speed` caps the dead/lag tiers: screen content survives the
+    full MAX_SPEED, but handheld camera footage is held to CAMERA_FAST_MAX
+    so a fast-forward stays watchable instead of smearing.
     Returns ([(start, end, speed)], estimated_output_duration).
     """
     speeds = {0: SPEED_DEAD, 1: SPEED_LAG, 2: SPEED_ACTION}
@@ -500,8 +509,8 @@ def assign_speeds(
         lo_m, hi_m = 0.4, 3.0
         for _ in range(40):
             m = (lo_m + hi_m) / 2
-            sp = {0: min(MAX_SPEED, max(1.0, SPEED_DEAD * m)),
-                  1: min(MAX_SPEED, max(1.0, SPEED_LAG * m)),
+            sp = {0: min(max_fast_speed, max(1.0, SPEED_DEAD * m)),
+                  1: min(max_fast_speed, max(1.0, SPEED_LAG * m)),
                   2: min(max_action_speed,
                          max(1.0, SPEED_ACTION * m))}
             if out_dur(sp) > target:

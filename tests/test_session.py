@@ -16,7 +16,8 @@ def _session() -> EditSession:
 
 # ------------------------------------------------------------- validate
 
-def test_validate_accepts_good_updates():
+def test_validate_accepts_good_updates(monkeypatch):
+    monkeypatch.setenv("REMY_AUDIO", "on")  # audio plumbing under test
     out = validate_updates({"caption": " new cap ", "target": 35,
                             "caption_pos": "top", "hook": False,
                             "crop": True, "keep_audio": True,
@@ -24,6 +25,16 @@ def test_validate_accepts_good_updates():
     assert out == {"caption": "new cap", "target": 35.0,
                    "caption_pos": "top", "hook": False, "crop": True,
                    "keep_audio": True, "music_style": "phonk"}
+
+
+def test_validate_drops_audio_when_parked(monkeypatch):
+    # default: audio is parked (REMY_AUDIO unset) → every audio update is
+    # dropped, but the non-audio settings still come through
+    monkeypatch.delenv("REMY_AUDIO", raising=False)
+    out = validate_updates({"crop": True, "keep_audio": True,
+                            "music": "phonk", "music_bpm": 140,
+                            "new_music_mix": True})
+    assert out == {"crop": True}
 
 
 def test_validate_clamps_target():
@@ -43,7 +54,8 @@ def test_validate_target_bool_rejected():
     assert validate_updates({"target": True}) == {}
 
 
-def test_validate_music_off_maps_to_none():
+def test_validate_music_off_maps_to_none(monkeypatch):
+    monkeypatch.setenv("REMY_AUDIO", "on")  # audio plumbing under test
     assert validate_updates({"music": "off"}) == {"music_style": None}
 
 
@@ -271,7 +283,10 @@ def test_tweak_updates_unknown_key():
     assert tweak_updates("explode", EditParams()) == {}
 
 
-def test_tweaks_pass_validation():
+def test_tweaks_pass_validation(monkeypatch):
+    # every tweak button the UI can emit must survive validation; the music
+    # buttons only exist when audio is enabled, so test with it on
+    monkeypatch.setenv("REMY_AUDIO", "on")
     from remy.bot.session import EditParams, tweak_updates
     p = EditParams(target=15.0)
     for key in ("shorter", "longer", "tighter", "wider", "hook", "crop",
@@ -302,7 +317,8 @@ def test_tweak_remix_bumps_mix():
     assert tweak_updates("remix", EditParams())["music"] == "phonk"
 
 
-def test_validate_music_bpm_clamps():
+def test_validate_music_bpm_clamps(monkeypatch):
+    monkeypatch.setenv("REMY_AUDIO", "on")  # audio plumbing under test
     assert validate_updates({"music_bpm": 140})["music_bpm"] == 140
     assert validate_updates({"music_bpm": 999})["music_bpm"] == 180
     assert validate_updates({"music_bpm": 10})["music_bpm"] == 60

@@ -13,6 +13,8 @@ import numpy as np
 from . import __version__
 from .analysis import (
     BRIGHT_TAIL_RATIO,
+    CAMERA_FAST_MAX,
+    MAX_SPEED,
     SAMPLE_FPS,
     SCREEN_ACTION_MAX,
     assign_speeds,
@@ -184,8 +186,12 @@ def plan(
     if head:
         runs = [[max(s, head), e, t] for s, e, t in runs if e > head]
     # screen-recording action stays followable at a mild speed-up;
-    # camera action is never accelerated
-    max_action = SCREEN_ACTION_MAX if is_landscape(src) else 1.0
+    # camera action is never accelerated. The dead/lag fast-forward is also
+    # capped lower for camera footage (it blurs past ~4x) than for screen
+    # content (legible at full MAX_SPEED).
+    screen = is_landscape(src)
+    max_action = SCREEN_ACTION_MAX if screen else 1.0
+    max_fast = MAX_SPEED if screen else CAMERA_FAST_MAX
     if target == "auto":
         target = auto_target(runs, max_action)
     target = cast("float | None", target)
@@ -193,7 +199,7 @@ def plan(
     hook_win = pick_hook(scores, dur_eff) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
                     if target and hook_win else target)
-    segs, est = assign_speeds(runs, solve_target, max_action)
+    segs, est = assign_speeds(runs, solve_target, max_action, max_fast)
     if hook_win:
         segs = [(hook_win[0], hook_win[1], 1.0)] + segs
         est += hook_win[1] - hook_win[0]

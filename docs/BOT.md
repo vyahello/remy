@@ -20,9 +20,11 @@ caps at 50 MB).
    renders yet.
 2. A **setup screen** appears. You pick the caption — tap an idea, *type
    your own*, or **🚫 No caption** — and flip the options you want before
-   rendering: **cold open** (off by default), zoom, look, music. Length is
+   rendering: **cold open** (off by default), zoom, look. Length is
    auto (a TikTok-friendly target solved from the content); tune it with
-   ⚡/🐢 in the redo loop after you've seen a take.
+   ⚡/🐢 in the redo loop after you've seen a take. **Audio is parked for
+   now** (exports stay silent so you drop a trending TikTok sound in-app) —
+   the music/ambient controls are hidden until `REMY_AUDIO=on`.
    Defaults are **no cold open and no caption**. Tap **🎬 Render** to start.
    A message caption sent with the file pre-selects it. **Landscape clips**
    (laptop/OBS recordings) bake no caption — native resolution so they go
@@ -44,8 +46,9 @@ caps at 50 MB).
    clipped on iPhone). Each tweak **stacks** a change instead of rendering
    — ⚡ shorter, 🐢 longer, 🔎 tighter / 🔭 wider framing, ✂️ trim intro /
    ✂️ trim outro (1s per tap), 🪝 cold open on/off, 🔍 zoom on/off, ✨ look
-   on/off, 🥁 phonk / 🎹 synthwave, 🔥 faster / 🧊 slower beat, 🎲 new mix,
-   🔇 no music, plus ✍️ new caption and 🎨 next style on vertical clips. The
+   on/off, plus ✍️ new caption and 🎨 next style on vertical clips. (The
+   music tweaks — phonk/synthwave, faster/slower, new mix, no music — return
+   when `REMY_AUDIO=on`.) The
    panel header shows what's stacked; tap **🎬 Render** once to apply them
    all together — so "longer + tighter + zoom off" is three taps and one
    render, not three separate takes. Stacking is instant (no Claude
