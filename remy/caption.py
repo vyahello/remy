@@ -65,10 +65,18 @@ _RISKY_RE = {term: re.compile(rf"\b{re.escape(term)}\b")
 
 MAX_CAPTION_CHARS = 48
 
-# Animated hook card: a bigger version of the caption rendered for the
-# cold open. Fonts are tried largest-first so a long caption still fits
-# the canvas width (HOOK_CARD_MAX_W ≈ 0.92 * 1080).
-HOOK_CARD_FONTS = [78, 70, 62, 54]
+# Persistent-caption sizing. The face is rendered BIG (TikTok captions read
+# large — a timid caption gets scrolled past) but auto-shrinks to fit a
+# frame-safe width so a long line never clips or runs to the canvas edge.
+# CAPTION_MAX_W leaves a margin each side of the 1080 frame; CAPTION_MIN_FONT
+# is the floor below which text stops being glanceable on a phone.
+CAPTION_FONT = 64
+CAPTION_MIN_FONT = 38
+CAPTION_MAX_W = 960
+
+# Animated hook card: a bigger version of the caption for the cold open.
+# make_caption fits it to HOOK_CARD_MAX_W (≈ 0.92 * 1080) on its own.
+HOOK_CARD_FONT = 84
 HOOK_CARD_MAX_W = 994
 
 
@@ -127,27 +135,69 @@ def _emoji_tile(ch: str, height: int) -> Image.Image | None:
                       Image.Resampling.LANCZOS)
 
 
+def _line_text_width(line: str, font: ImageFont.FreeTypeFont,
+                     font_size: int, measurer: ImageDraw.ImageDraw) -> int:
+    """Estimate a line's content width (emoji ≈ one em) for the fit loop."""
+    width = 0
+    for is_emoji, chunk in split_runs(line):
+        if is_emoji:
+            width += sum(font_size + 10 for _ in chunk.strip())
+        else:
+            width += int(measurer.textlength(chunk, font=font))
+    return width
+
+
+def _fit_font_size(lines: list[str], target: int, min_size: int,
+                   pad_x: int, margin: int, max_w: int) -> int:
+    """Largest size in [min_size, target] whose full PNG width fits max_w.
+
+    The caption is rendered as big as it can be without the canvas reaching
+    the frame edge — so it stays bold and glanceable, but a long or
+    wide-glyph caption can never clip or overrun the frame. `max_w` budgets
+    the whole PNG (pill + shadow margin), so the returned canvas is always
+    ≤ max_w.
+    """
+    measurer = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
+    fixed = 2 * pad_x + 2 * margin
+    size = target
+    while size > min_size:
+        font = ImageFont.truetype(FONT_TEXT, size)
+        sw = max(2, round(size / 30))
+        widest = max(_line_text_width(ln, font, size, measurer)
+                     for ln in lines)
+        if widest + fixed + 2 * sw <= max_w:
+            break
+        size -= 2
+    return size
+
+
 def make_caption(
-    text: str, out_path: str, font_size: int = 54,
-    style: str = DEFAULT_STYLE,
+    text: str, out_path: str, font_size: int = CAPTION_FONT,
+    style: str = DEFAULT_STYLE, max_w: int = CAPTION_MAX_W,
 ) -> tuple[int, int]:
     """Stacked rounded pills with heavy upright text + color emoji.
 
     `style` picks a STYLES preset (text colour, pill fill, accent keyline
-    and a thin glyph stroke). A real soft drop-shadow (blurred silhouettes)
-    sits behind the pills so the caption lifts off busy footage without a
-    hard black halo. Returns (width, height) of the saved PNG — the size
-    includes a transparent margin for the shadow bleed, so layout keeps it
-    centred.
+    and a glyph stroke). The face is rendered as large as `font_size` but
+    auto-shrinks (down to CAPTION_MIN_FONT) so the pill never exceeds
+    `max_w` — big and punchy, yet a long caption can't clip or run off the
+    frame. A two-layer lift (a wide ambient glow + a tighter contact
+    shadow) floats the block off busy footage without a hard halo, so the
+    text stays legible over anything. Returns (width, height) of the saved
+    PNG — the size includes a transparent margin for the shadow bleed, so
+    layout keeps it centred.
     """
     st = STYLES.get(style, STYLES[DEFAULT_STYLE])
     text_color, box_fill = st["text"], st["fill"]
     accent, stroke = st["accent"], st["stroke"]
-    font = ImageFont.truetype(FONT_TEXT, font_size)
     lines = balance_lines(text)
-    pad_x, pad_y, gap, radius = 34, 18, 14, 26
-    sw = max(1, round(font_size / 42))      # glyph outline width
-    margin = 26                             # transparent room for the shadow
+    pad_x, pad_y, gap, radius = 36, 20, 15, 28
+    margin = 40                             # transparent room for the glow
+
+    font_size = _fit_font_size(lines, font_size, CAPTION_MIN_FONT,
+                               pad_x, margin, max_w)
+    font = ImageFont.truetype(FONT_TEXT, font_size)
+    sw = max(2, round(font_size / 30))      # glyph outline width
     ascent, descent = font.getmetrics()
     line_h = ascent + descent
 
@@ -183,22 +233,25 @@ def make_caption(
         rows.append((parts, bx, y, bw))
         y += box_h + gap
 
-    # soft drop shadow: blurred pill silhouettes behind everything
-    shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    for _parts, bx, y, bw in rows:
-        sd.rounded_rectangle([bx, y + 8, bx + bw, y + box_h + 8],
-                             radius, fill=(0, 0, 0, 140))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(9))
+    # two-layer lift: a wide ambient glow under everything, then a tighter
+    # contact shadow dropped just beneath the pills. Together they read as a
+    # soft float on any footage (bright screen or dark desk) — no hard halo.
+    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    for blur, dy, alpha in ((20, 0, 110), (7, 10, 150)):
+        layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        for _parts, bx, y, bw in rows:
+            ld.rounded_rectangle([bx, y + dy, bx + bw, y + box_h + dy],
+                                 radius, fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img, layer.filter(
+            ImageFilter.GaussianBlur(blur)))
 
-    img = Image.alpha_composite(
-        Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0)), shadow)
     d = ImageDraw.Draw(img)
     for parts, bx, y, bw in rows:
         d.rounded_rectangle([bx, y, bx + bw, y + box_h], radius, fill=box_fill)
         if accent[3]:
             d.rounded_rectangle([bx, y, bx + bw, y + box_h], radius,
-                                outline=accent, width=2)
+                                outline=accent, width=3)
         x = bx + pad_x
         for part in parts:
             if part[0] == "txt":
@@ -222,13 +275,9 @@ def make_hook_card(
 ) -> tuple[int, int]:
     """Render the cold-open hook card PNG — a bigger caption.
 
-    Thin wrapper over make_caption (same color-emoji + RGBA path), trying
-    descending font sizes so a long line still fits within `max_w`.
+    Thin wrapper over make_caption: renders at the large hook size and lets
+    make_caption's own fit loop shrink it to `max_w` if the line is long.
     Returns (width, height) of the saved PNG.
     """
-    w = h = 0
-    for size in HOOK_CARD_FONTS:
-        w, h = make_caption(text, out_path, font_size=size, style=style)
-        if w <= max_w:
-            break
-    return w, h
+    return make_caption(text, out_path, font_size=HOOK_CARD_FONT,
+                        style=style, max_w=max_w)

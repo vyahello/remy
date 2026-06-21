@@ -77,6 +77,22 @@ def test_make_caption_writes_png(tmp_path):
 
 @pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
                     reason="DejaVu font not installed")
+def test_make_caption_long_text_fits_frame(tmp_path):
+    # captions of any length must auto-shrink so the PNG never exceeds the
+    # frame-safe width (no clipping / running off the edge)
+    long = "How I shaved 20 minutes off my daily dev setup ⚡"
+    longer = "How I shaved twenty whole minutes off my daily dev setup ⚡"
+    w_long, _ = C.make_caption(long, str(tmp_path / "long.png"))
+    w_longer, _ = C.make_caption(longer, str(tmp_path / "longer.png"))
+    assert w_long <= C.CAPTION_MAX_W
+    assert w_longer <= C.CAPTION_MAX_W
+    # a short caption is rendered narrower than a long, width-bound one
+    w_short, _ = C.make_caption("Quick tip", str(tmp_path / "short.png"))
+    assert w_short < w_long
+
+
+@pytest.mark.skipif(not os.path.exists(C.FONT_TEXT),
+                    reason="DejaVu font not installed")
 def test_make_hook_card_bigger_and_fits(tmp_path):
     text = "How I set this up"
     hook = tmp_path / "hook.png"

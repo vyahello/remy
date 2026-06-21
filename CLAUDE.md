@@ -66,9 +66,12 @@ edited clip ready to post (see `docs/IDEAS.md`).
 6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
    renders a heavy **upright** sans (Open Sans ExtraBold, falling back to
    DejaVu/Liberation; `REMY_FONT` overrides) in the style colour on rounded
-   pills with an accent keyline, a thin glyph stroke and a real blurred
-   drop-shadow + color emoji — punchy and TikTok-native, never covering the
-   action. Placement (`compute_layout`) picks by geometry: **wide-in-vertical
+   pills with an accent keyline, a glyph stroke and a **two-layer lift** (a
+   wide ambient glow under a tighter contact shadow) + color emoji — punchy
+   and TikTok-native, legible over any footage, never covering the action.
+   The face is rendered **big** (`CAPTION_FONT`) but **auto-shrinks to fit a
+   frame-safe width** (`_fit_font_size` → `CAPTION_MAX_W`, floor
+   `CAPTION_MIN_FONT`) so a long caption can never clip or run off the edge. Placement (`compute_layout`) picks by geometry: **wide-in-vertical
    content** (terminals/code, which fill the frame top-to-bottom over time)
    **parks** the caption on clean canvas *below* a top-pinned video — off
    the content for good; **tall near-9:16 footage** that would pillarbox if
