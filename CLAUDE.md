@@ -185,8 +185,10 @@ venv/bin/mypy            # fully typed; must stay clean
 ```
 
 The codebase is fully type-hinted and mypy-clean — keep it that way when
-editing. CI (`.github/workflows/ci.yml`) runs ruff + mypy + pytest on
-3.11–3.13. The deploy stage pushes `main` to the VPS over SSH; it is
+editing. CI (`.github/workflows/ci.yml`) runs ruff + pytest on 3.11–3.13
+and mypy on 3.12–3.13 (numpy's stubs now use PEP 695 `type` syntax, which
+mypy can't parse on a 3.11 interpreter; `python_version` is pinned to 3.12).
+The deploy stage pushes `main` to the VPS over SSH; it is
 armed by the repo variable `TOKCUT_DEPLOY=enabled` + `VPS_*` secrets and
 skipped otherwise. Server setup: `deploy/bootstrap.sh`, runbook
 `docs/DEPLOY.md`.

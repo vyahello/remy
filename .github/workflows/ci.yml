@@ -34,6 +34,10 @@ jobs:
         run: ruff check remy tests
 
       - name: Type check
+        # numpy's stubs use PEP 695 `type` statements (3.12+ syntax), which
+        # mypy can't parse on a 3.11 interpreter — skip mypy there. Runtime
+        # 3.11 support is still verified by the test step below.
+        if: matrix.python-version != '3.11'
         run: mypy
 
       - name: Test

@@ -47,6 +47,10 @@ target-version = "py311"
 select = ["E", "F", "W", "I"]
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12 is the type-checking floor: numpy's published stubs now use PEP 695
+# `type` statements (3.12+ syntax), so mypy can't parse them on an older
+# target. Runtime support stays 3.11+ — pytest covers it across the matrix;
+# the CI mypy step just skips the 3.11 interpreter (it can't parse the stubs).
+python_version = "3.12"
 ignore_missing_imports = true
 files = ["remy"]

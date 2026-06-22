@@ -63,8 +63,8 @@ def motion_scores(
         raise ValueError(
             "could not decode at least two analysis frames — "
             "is this a valid video file?")
-    frames = np.frombuffer(raw[: n * aw * ah], dtype=np.uint8)
-    frames = frames.reshape(n, ah, aw).astype(np.int16)
+    flat = np.frombuffer(raw[: n * aw * ah], dtype=np.uint8)
+    frames = flat.reshape(n, ah, aw).astype(np.int16)
     diffs = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
     return np.concatenate([[diffs[0]], diffs]), frames
 
