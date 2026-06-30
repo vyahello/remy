@@ -463,6 +463,115 @@ def detect_content_window(video: str, duration: float) -> tuple[float, float]:
     return clean_window(reply, duration)
 
 
+MISTAKE_PROMPT = CREATOR_CONTEXT + """
+You are a TikTok editor cleaning up a LIVE-CODING / terminal screen
+recording before it ships. Each frame is labelled with its timestamp in
+seconds (the t…s in the filename).
+
+Frames sampled in order from the {duration:.0f}s recording:
+{frames}
+
+Find the spots where the creator FUMBLED and the recording should jump
+past them, so the final cut shows only clean, working coding. A fumble is
+something the creator would be embarrassed to leave in, for example:
+- a mistyped command or path, then a correction or retype of the same
+  thing right after;
+- an error the command threw — "command not found", "No such file or
+  directory", a red error line, a stack trace / Traceback, a compiler or
+  syntax error — followed by the fixed version that works;
+- a wrong turn that gets undone: a file opened then closed, output that's
+  abandoned, a dead end the creator backs out of.
+
+For each fumble, report the SOURCE-second span to DELETE: from where the
+mistake starts to just before the successful retry / recovery begins. Keep
+the good take — cut the bad attempt and the error, not the fix.
+
+Be CONSERVATIVE. This is the creator's real work; most of it is correct
+and must stay. Only flag a span when the frames clearly show a mistake and
+its recovery — never guess, never cut a command that simply takes a moment
+or produces normal (non-error) output. If nothing is clearly a mistake,
+return an empty list. Never flag more than half the recording.
+
+Reply with ONLY a JSON object, no other text:
+{{"cuts": [{{"start": <seconds>, "end": <seconds>, "reason": "<short>"}}]}}
+"""
+
+MISTAKE_MIN_SPAN = 0.4    # ignore spans shorter than this (sampling noise)
+MISTAKE_MAX_FRACTION = 0.5  # never delete more than half the recording
+MISTAKE_MAX_FRAMES = 24   # cap the sampled frames so the prompt stays cheap
+
+
+def clean_cut_spans(
+    reply: dict, duration: float
+) -> list[tuple[float, float]]:
+    """Turn Claude's {cuts:[…]} into safe, sorted source-second spans.
+
+    Clamps each span to the clip, drops nonsense (reversed, zero-length,
+    sub-MISTAKE_MIN_SPAN), merges overlaps, and caps the TOTAL removed at
+    MISTAKE_MAX_FRACTION of the duration so an over-eager reply can never
+    gut the video. Returns [] whenever nothing survives.
+    """
+    raw = reply.get("cuts", [])
+    if not isinstance(raw, list):
+        return []
+    spans: list[tuple[float, float]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = float(item.get("start", 0))
+            end = float(item.get("end", 0))
+        except (TypeError, ValueError):
+            continue
+        start = max(0.0, min(start, duration))
+        end = max(0.0, min(end, duration))
+        if end - start >= MISTAKE_MIN_SPAN:
+            spans.append((round(start, 2), round(end, 2)))
+    if not spans:
+        return []
+    spans.sort()
+    merged: list[list[float]] = []
+    for a, b in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    budget = duration * MISTAKE_MAX_FRACTION
+    out: list[tuple[float, float]] = []
+    used = 0.0
+    for a, b in merged:
+        if used + (b - a) > budget:
+            break  # too aggressive past here — trust the rest to the creator
+        used += b - a
+        out.append((a, b))
+    return out
+
+
+def detect_mistakes(
+    video: str, duration: float
+) -> list[tuple[float, float]]:
+    """Find source-second spans of mistyped commands / errors to delete.
+
+    Samples the recording densely (≈1 fps, capped at MISTAKE_MAX_FRAMES)
+    and has Claude flag the fumbles — a bad command, the error it threw,
+    the dead end — so the edit can drop them and ship only clean live
+    coding. Best-effort: returns [] when nothing clear is found. Raises
+    JudgeUnavailable / ValueError on a hard failure (the caller treats it
+    as best-effort).
+    """
+    n = min(MISTAKE_MAX_FRAMES, max(N_FRAMES, round(duration)))
+    tmp = tempfile.mkdtemp(prefix="remy_mistakes_")
+    try:
+        frames = extract_frames(
+            video, spread_times(duration, n=n, margin=0.0), tmp)
+        prompt = MISTAKE_PROMPT.format(
+            frames="\n".join(frames), duration=duration)
+        reply = parse_json_obj(run_claude(prompt))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return clean_cut_spans(reply, duration)
+
+
 MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight
 
 # Hashtags TikTok suppresses, has retired, or that draw a moderation cloud

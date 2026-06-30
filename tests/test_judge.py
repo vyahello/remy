@@ -169,3 +169,40 @@ def test_clean_hashtags_caps_at_five_keeping_order():
     assert out == ["#tag0", "#tag1", "#tag2", "#tag3", "#tag4"]  # first 5
     assert J.clean_hashtags("not a list") == []
     assert J.clean_hashtags([1, "", "#"]) == []
+
+
+# ----------------------------------------------------------- clean_cut_spans
+
+def test_clean_cut_spans_clamps_and_sorts():
+    reply = {"cuts": [{"start": 18.0, "end": 25.0},
+                      {"start": -3.0, "end": 4.0}]}
+    spans = J.clean_cut_spans(reply, duration=20.0)
+    # second span clamps to [0,4]; ordered; out-of-range end clamps to 20
+    assert spans == [(0.0, 4.0), (18.0, 20.0)]
+
+
+def test_clean_cut_spans_merges_overlaps():
+    reply = {"cuts": [{"start": 2.0, "end": 6.0},
+                      {"start": 5.0, "end": 9.0}]}
+    assert J.clean_cut_spans(reply, duration=30.0) == [(2.0, 9.0)]
+
+
+def test_clean_cut_spans_drops_tiny_and_reversed():
+    reply = {"cuts": [{"start": 5.0, "end": 5.1},   # sub-min span
+                      {"start": 9.0, "end": 3.0}]}   # reversed -> empty
+    assert J.clean_cut_spans(reply, duration=30.0) == []
+
+
+def test_clean_cut_spans_caps_total_removed():
+    # three 5s cuts on a 20s clip: budget is half (10s) -> only two survive
+    reply = {"cuts": [{"start": 0.0, "end": 5.0},
+                      {"start": 6.0, "end": 11.0},
+                      {"start": 12.0, "end": 17.0}]}
+    spans = J.clean_cut_spans(reply, duration=20.0)
+    assert spans == [(0.0, 5.0), (6.0, 11.0)]
+
+
+def test_clean_cut_spans_handles_garbage():
+    assert J.clean_cut_spans({}, 20.0) == []
+    assert J.clean_cut_spans({"cuts": "nope"}, 20.0) == []
+    assert J.clean_cut_spans({"cuts": [{"start": "x"}]}, 20.0) == []

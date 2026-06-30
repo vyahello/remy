@@ -34,6 +34,9 @@ class EditParams:
     hook: bool = False  # cold-open teaser — opt-in (default off)
     trim_start: float = 0.0  # secs hard-cut off the source head (intro)
     trim_end: float = 0.0    # secs hard-cut off the source tail (outro)
+    # source-second spans of mistyped commands / errors to delete outright
+    # (judge.detect_mistakes); kept off the head/tail trim path
+    mistake_cuts: list[tuple[float, float]] = field(default_factory=list)
     crop: bool = True
     zoom: float = 1.0  # framing dial on top of the auto-zoom
     look: bool = True  # finishing grade (contrast/saturation pop)

@@ -16,12 +16,12 @@ from .analysis import (
     CAMERA_FAST_MAX,
     MAX_SPEED,
     SAMPLE_FPS,
-    SCREEN_ACTION_MAX,
     assign_speeds,
     auto_target,
     beat_align,
     classify,
     content_crop,
+    cut_spans,
     edit_window,
     motion_scores,
     pick_hook,
@@ -114,6 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--trim-end", type=float, default=0.0, metavar="SEC",
                     help="hard-cut this many seconds off the source tail "
                          "(e.g. a redundant outro); stacks on auto-trim")
+    ap.add_argument("--cut-mistakes", action="store_true",
+                    help="have Claude watch the clip and delete mistyped "
+                         "commands / terminal errors / fumbles before the "
+                         "retype (needs the claude CLI; best-effort)")
     ap.add_argument("--keep-audio", action="store_true",
                     help="Keep the original ambient audio. By default the "
                          "export is muted so you add a TikTok sound in-app.")
@@ -141,13 +145,16 @@ def build_parser() -> argparse.ArgumentParser:
 def plan(
     input_path: str, target: float | str | None, hook: bool = True,
     trim_start: float = 0.0, trim_end: float = 0.0,
+    cut_spans_src: list[tuple[float, float]] | None = None,
 ) -> tuple[SourceInfo, list[SpeedSegment], float, np.ndarray,
            tuple[float, float] | None]:
     """Analysis + edit decisions.
 
     `target` is seconds, None (base tier speeds), or "auto" — solve a
     TikTok-friendly length from the content (completion-rate sweet spot,
-    floored by the real-time action). Returns (src, segments, est,
+    floored by the real-time action). `cut_spans_src` are source-second
+    spans to delete outright (e.g. a mistyped command and the error it
+    threw — see judge.detect_mistakes). Returns (src, segments, est,
     frames, hook_window). When a hook is chosen, the first segment is a
     1x cold open of the video's best beat; leading/trailing dead footage
     is hard-trimmed either way.
@@ -185,12 +192,17 @@ def plan(
         to_segments(classify(scores), duration=dur_eff), seg_brightness)
     if head:
         runs = [[max(s, head), e, t] for s, e, t in runs if e > head]
-    # screen-recording action stays followable at a mild speed-up;
-    # camera action is never accelerated. The dead/lag fast-forward is also
-    # capped lower for camera footage (it blurs past ~4x) than for screen
-    # content (legible at full MAX_SPEED).
+    # drop the fumbles — a mistyped command, its error, the retype before
+    # the good take — so the export is clean live coding (judge-detected
+    # source spans; empty/None when there's nothing to cut)
+    if cut_spans_src:
+        runs = cut_spans(runs, cut_spans_src)
+    # Live coding stays at real time: the typing IS the content, so the
+    # action tier is never accelerated, screen recording or not. The
+    # dead/lag fast-forward is still capped lower for camera footage (it
+    # blurs past ~4x) than for screen content (legible at full MAX_SPEED).
     screen = is_landscape(src)
-    max_action = SCREEN_ACTION_MAX if screen else 1.0
+    max_action = 1.0
     max_fast = MAX_SPEED if screen else CAMERA_FAST_MAX
     if target == "auto":
         target = auto_target(runs, max_action)
@@ -217,6 +229,7 @@ def edit(
     hook: bool = False,
     trim_start: float = 0.0,
     trim_end: float = 0.0,
+    cut_spans_src: list[tuple[float, float]] | None = None,
     crop_enabled: bool = True,
     zoom: float = 1.0,
     look_enabled: bool = True,
@@ -247,9 +260,13 @@ def edit(
     out = output or os.path.splitext(input_path)[0] + "_remy.mp4"
 
     src, segs, est, frames, hook_win = plan(
-        input_path, target, hook, trim_start, trim_end)
+        input_path, target, hook, trim_start, trim_end, cut_spans_src)
     if trim_start or trim_end:
         notify(f"manual trim: −{trim_start:.1f}s head / −{trim_end:.1f}s tail")
+    if cut_spans_src:
+        cut_total = sum(b - a for a, b in cut_spans_src)
+        notify(f"mistakes cut: {len(cut_spans_src)} span(s), "
+               f"−{cut_total:.1f}s of fumbles/errors")
     landscape = is_landscape(src)
     notify(f"source: {src['w']}x{src['h']}  {src['duration']:.1f}s "
            f"@ {src['fps']:.0f}fps  "
@@ -364,12 +381,38 @@ def edit(
     return out
 
 
+def _detect_mistakes_cli(input_path: str) -> list[tuple[float, float]] | None:
+    """Run the Claude mistake-detection pass for the CLI's --cut-mistakes.
+
+    Best-effort: prints a note and returns None on any failure (missing
+    CLI, auth, unparseable reply) so the edit still runs uncut.
+    """
+    from .judge import JudgeUnavailable, claude_available, detect_mistakes
+    if not claude_available():
+        print("⚠ --cut-mistakes needs the claude CLI on PATH; skipping",
+              file=sys.stderr)
+        return None
+    try:
+        dur = probe(input_path)["duration"]
+        spans = detect_mistakes(input_path, dur)
+    except (JudgeUnavailable, ValueError) as exc:
+        print(f"⚠ mistake detection unavailable: {exc}", file=sys.stderr)
+        return None
+    if not spans:
+        print("✓ no clear mistakes to cut", file=sys.stderr)
+    return spans or None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.caption:
         for warning in check_caption(args.caption):
             print(f"⚠ caption check: {warning}", file=sys.stderr)
+
+    cut_spans_src: list[tuple[float, float]] | None = None
+    if args.cut_mistakes:
+        cut_spans_src = _detect_mistakes_cli(args.input)
 
     try:
         out = edit(
@@ -382,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
             hook=args.hook,
             trim_start=args.trim_start,
             trim_end=args.trim_end,
+            cut_spans_src=cut_spans_src,
             crop_enabled=args.crop,
             zoom=args.zoom,
             look_enabled=args.look,

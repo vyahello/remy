@@ -13,7 +13,11 @@ ANALYZE_W = 120         # analysis frame width (tiny = fast)
 SMOOTH_SEC = 1.5        # smoothing window for motion scores
 MIN_SEG_SEC = 1.4       # shorter runs get merged into a neighbour
 PCT_LOW, PCT_HIGH = 45, 80   # adaptive tier thresholds (percentiles)
-SPEED_DEAD, SPEED_LAG, SPEED_ACTION = 3.2, 1.7, 1.0
+# Pacing is deliberately gentle: this editor is built for live-coding and
+# terminal tutorials, where the viewer is reading along. The lag/dead
+# fast-forward is mild (real waiting is trimmed, not blurred past) so the
+# coding itself stays at a followable speed — action is never sped up.
+SPEED_DEAD, SPEED_LAG, SPEED_ACTION = 2.4, 1.3, 1.0
 MAX_SPEED = 6.0
 # Handheld camera footage (a phone filming a desk/device) smears into an
 # unwatchable blur past ~4x — fast-forwarding it should still read as the
@@ -155,6 +159,50 @@ def to_segments(
         if merged:
             merged[-1][1] = min(merged[-1][1], duration)
     return merged
+
+
+def cut_spans(
+    runs: list[Segment],
+    spans: list[tuple[float, float]],
+    min_piece: float = 0.12,
+) -> list[Segment]:
+    """Delete interior source-time spans from the tier runs.
+
+    Used to drop the moments a tutorial recorder would want gone — a
+    mistyped command, the error it threw, the fumble before the retype —
+    leaving the successful take. Each span (in SOURCE seconds) is
+    subtracted from every run it overlaps, splitting a run in two when the
+    cut lands in its middle; tiers and ordering are preserved so the rest
+    of the pipeline (speeds, captions) is unaffected. Pieces shorter than
+    `min_piece` are dropped so a cut never leaves a single-frame sliver.
+    Overlapping/unsorted spans are normalized first.
+    """
+    if not spans:
+        return runs
+    norm: list[list[float]] = []
+    for a, b in sorted((min(a, b), max(a, b)) for a, b in spans):
+        if norm and a <= norm[-1][1]:
+            norm[-1][1] = max(norm[-1][1], b)
+        else:
+            norm.append([a, b])
+    out: list[Segment] = []
+    for s, e, t in runs:
+        pieces = [(s, e)]
+        for cs, ce in norm:
+            nxt: list[tuple[float, float]] = []
+            for ps, pe in pieces:
+                if ce <= ps or cs >= pe:      # no overlap — keep whole
+                    nxt.append((ps, pe))
+                    continue
+                if ps < cs:                   # head survives the cut
+                    nxt.append((ps, cs))
+                if ce < pe:                   # tail survives the cut
+                    nxt.append((ce, pe))
+            pieces = nxt
+        for ps, pe in pieces:
+            if pe - ps >= min_piece:
+                out.append([ps, pe, t])
+    return out
 
 
 BRIGHT_TAIL_RATIO = 1.35  # tail this much brighter than the dimmest = content
@@ -556,11 +604,14 @@ def edit_window(
     return head, tail
 
 
-# TikTok's main ranking signal is completion rate, so shorter wins —
-# ~25-40s is the sweet spot for screen/tutorial content. Aim for the
-# low end, but never compress real-time action to get there.
-AUTO_SWEET = 30.0  # output length to aim for when compressing
-AUTO_MAX = 35.0    # natural pacing up to this long is left alone
+# Completion rate still rewards shorter, but a live-coding / terminal
+# tutorial has to stay long enough to actually teach — squeezing it to
+# ~30s blurs the very thing the viewer came to follow. So natural pacing
+# is left alone up to a roomier ceiling, and when a clip really must be
+# compressed it aims for a longer, still-followable length (never below
+# the real-time action).
+AUTO_SWEET = 45.0  # output length to aim for when compressing
+AUTO_MAX = 55.0    # natural pacing up to this long is left alone
 # screen-recording action (typing, scrolling output) stays followable
 # at a mild speed-up; camera action keeps strict real time
 SCREEN_ACTION_MAX = 1.5

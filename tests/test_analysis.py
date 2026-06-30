@@ -79,3 +79,37 @@ def test_saliency_map_flags_motion_at_equal_brightness():
     frames[1::2, :h // 2, :] = 150
     sal = A.saliency_map(frames)
     assert sal[:h // 2].mean() > sal[h // 2:].mean() + 0.2
+
+
+# --------------------------------------------------------------- cut_spans
+
+def test_cut_spans_splits_run_in_the_middle():
+    # delete a fumble in the middle of an action run -> two pieces, tier kept
+    runs = [[0.0, 10.0, 2]]
+    out = A.cut_spans(runs, [(4.0, 6.0)])
+    assert out == [[0.0, 4.0, 2], [6.0, 10.0, 2]]
+
+
+def test_cut_spans_trims_edges_and_drops_covered_runs():
+    runs = [[0.0, 5.0, 2], [5.0, 8.0, 1], [8.0, 12.0, 0]]
+    # span covers the whole middle run and clips the neighbours
+    out = A.cut_spans(runs, [(4.0, 9.0)])
+    assert out == [[0.0, 4.0, 2], [9.0, 12.0, 0]]
+
+
+def test_cut_spans_merges_overlapping_and_unsorted():
+    runs = [[0.0, 20.0, 1]]
+    out = A.cut_spans(runs, [(12.0, 15.0), (4.0, 8.0), (6.0, 10.0)])
+    assert out == [[0.0, 4.0, 1], [10.0, 12.0, 1], [15.0, 20.0, 1]]
+
+
+def test_cut_spans_drops_slivers():
+    # a cut that would leave a <min_piece tail drops it instead of a flash
+    runs = [[0.0, 5.05, 2]]
+    out = A.cut_spans(runs, [(0.0, 5.0)])
+    assert out == []
+
+
+def test_cut_spans_empty_is_noop():
+    runs = [[0.0, 10.0, 2], [10.0, 20.0, 0]]
+    assert A.cut_spans(runs, []) == runs
