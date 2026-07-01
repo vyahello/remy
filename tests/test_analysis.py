@@ -17,6 +17,17 @@ def test_maxspeed_rescues_long_camera_clip_under_hard_max():
     assert full < capped
 
 
+def test_action_speedup_fits_ceiling_when_idle_alone_cannot():
+    # an almost-all-action clip can't fit the ~2-min ceiling on idle
+    # fast-forward alone; letting the coding tier reach ACTION_FIT_MAX does.
+    runs = [[0.0, 200.0, 2], [200.0, 220.0, 0]]  # 200s action + 20s idle
+    _, at_realtime = A.assign_speeds(runs, 100.0, 1.0, A.MAX_SPEED)
+    _, at_sped = A.assign_speeds(runs, 100.0, A.ACTION_FIT_MAX, A.MAX_SPEED)
+    assert at_realtime > A.AUTO_HARD_MAX        # 200s action alone overshoots
+    assert at_sped < at_realtime                # coding sped up -> shorter
+    assert at_sped <= A.AUTO_HARD_MAX + 1       # now fits ~2 min
+
+
 def test_classify_three_tiers():
     # weight the distribution so the top values exceed the 80th percentile
     scores = np.array([0.0] * 20 + [5.0] * 20 + [50.0] * 10, dtype=float)

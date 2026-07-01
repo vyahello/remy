@@ -12,6 +12,7 @@ import numpy as np
 
 from . import __version__
 from .analysis import (
+    ACTION_FIT_MAX,
     AUTO_HARD_MAX,
     BRIGHT_TAIL_RATIO,
     CAMERA_FAST_MAX,
@@ -210,13 +211,22 @@ def plan(
     target = cast("float | None", target)
     # Keep a finished TikTok under ~2 min. Camera footage caps its fast
     # tiers at CAMERA_FAST_MAX because a phone-filmed desk blurs past ~4x —
-    # but that cap can floor a long clip well over the ceiling. When it
-    # would, let the IDLE (dead/lag) stretches fast-forward up to MAX_SPEED:
-    # blurring the waiting is fine, and action still never leaves 1.0x.
-    if target and not screen and max_fast < MAX_SPEED:
-        _, est_capped = assign_speeds(runs, target, max_action, max_fast)
-        if est_capped > AUTO_HARD_MAX:
-            max_fast = MAX_SPEED
+    # but that cap can floor a long clip well over the ceiling. Escalate in
+    # two stages, quality-preserving first:
+    #   1) let the IDLE (dead/lag) stretches fast-forward up to MAX_SPEED
+    #      (blurring the waiting is fine);
+    #   2) only if that still overshoots, let the CODING speed up too — up
+    #      to ACTION_FIT_MAX, aiming AT the ceiling so it's sped as little as
+    #      needed rather than to the short auto target.
+    if target and not screen:
+        if max_fast < MAX_SPEED:
+            _, est = assign_speeds(runs, target, max_action, max_fast)
+            if est > AUTO_HARD_MAX:
+                max_fast = MAX_SPEED
+        _, est = assign_speeds(runs, target, max_action, max_fast)
+        if est > AUTO_HARD_MAX:
+            max_action = ACTION_FIT_MAX
+            target = AUTO_HARD_MAX
 
     hook_win = pick_hook(scores, dur_eff) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])

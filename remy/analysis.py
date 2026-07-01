@@ -616,6 +616,10 @@ def edit_window(
 AUTO_SWEET = 45.0  # output length to aim for when compressing
 AUTO_MAX = 55.0    # natural pacing up to this long is left alone
 AUTO_HARD_MAX = 120.0  # ceiling: a finished TikTok should stay under ~2 min
+# Last resort for a long, action-dense clip: when even MAX_SPEED idle
+# fast-forward can't fit the ceiling, the coding itself may speed up this
+# far. Still followable (you read along a little quicker), never a blur.
+ACTION_FIT_MAX = 1.8
 # screen-recording action (typing, scrolling output) stays followable
 # at a mild speed-up; camera action keeps strict real time
 SCREEN_ACTION_MAX = 1.5
