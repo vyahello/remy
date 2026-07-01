@@ -13,17 +13,13 @@ TOP_PAD = 30
 # so 8% clears it while letting a tall two-line caption ride high on the
 # black bar above the content (instead of dipping onto it). Bottom ~22%
 # is the description / music ticker / username — captions live between.
+# The caption lives strictly BETWEEN the two UI zones: never in the top ~8%
+# (tab bar) and never in the bottom ~22% — that lower band is where the
+# creator's OWN TikTok description + hashtags render, so a caption there
+# double-stacks with them. Placement seeks a *static* region inside this
+# window (a still header up top, or a dead desk/keyboard lower down) and
+# leans toward the top, where a caption reads cleanest.
 SAFE_TOP, SAFE_BOTTOM = 0.08, 0.78
-
-# Footer escape hatch: phone footage of a screen (a laptop/desktop filmed
-# on a desk — this project's bread and butter) fills the ENTIRE safe zone
-# with content (code, a terminal, the IDE), so the only caption-free region
-# is the dead foreground *below* it — the dark desk / keyboard. We let the
-# auto search drop that far, but only when it's markedly calmer than
-# anything in the safe zone (FOOTER_PENALTY), so ordinary footage that has a
-# clean band up top is never dragged down onto the TikTok UI for no reason.
-FOOTER_BOTTOM = 0.92
-FOOTER_PENALTY = 0.08
 
 
 def hook_card_y() -> int:
@@ -48,16 +44,14 @@ def auto_caption_y(
     cx0 = ((OUT_W - cap_w) // 2) // gs
     cx1 = ((OUT_W + cap_w) // 2) // gs
     y_lo = int(SAFE_TOP * OUT_H) + 10
-    # Search the safe zone for the calmest band, and — for footage that fills
-    # it entirely — keep searching down into the footer. Screens glow, so on
-    # a phone clip of a laptop the bright content scores high and the caption
-    # settles on the dark, still region below the text. When that region only
-    # exists *below* the safe zone (the desk in front of a full-frame screen
-    # recording), the footer escape hatch lets the caption reach it instead
-    # of parking on the code. The mild top bias is only a tie-breaker: a
-    # uniformly calm frame (even lighting, no busy region) still rides high.
-    y_safe = int(SAFE_BOTTOM * OUT_H) - cap_h
-    y_hi = int(FOOTER_BOTTOM * OUT_H) - cap_h
+    # Search the safe zone for the calmest band. Saliency is motion-led (see
+    # analysis.saliency_map), so a STILL region reads as calm even when it's
+    # bright — the caption may sit on a static header or a title bar, but
+    # never over the part of the screen that's actively changing (typing,
+    # scrolling, a device redrawing). The mild top bias then leans an
+    # otherwise-tied choice toward the top, where a caption reads cleanest;
+    # a busy top decisively pushes it down onto a calmer lower band instead.
+    y_hi = int(SAFE_BOTTOM * OUT_H) - cap_h
     best_y, best_score = y_lo, float("inf")
     for y in range(y_lo, max(y_lo + 1, y_hi), 16):
         band = canvas[y // gs:(y + cap_h) // gs, cx0:cx1]
@@ -68,12 +62,7 @@ def auto_caption_y(
         # over sparse-but-real content because the black between glyphs
         # averages the mean down.
         score = 0.5 * float(band.mean()) + 0.5 * float(band.max())
-        # dipping below the safe zone onto the footer costs a flat penalty:
-        # only a foreground that is clearly emptier than the whole safe zone
-        # is worth risking the TikTok description/username area down there.
-        if y > y_safe:
-            score += FOOTER_PENALTY
-        score += 0.03 * (y - y_lo) / max(1, y_hi - y_lo)
+        score += 0.05 * (y - y_lo) / max(1, y_hi - y_lo)
         if score < best_score:
             best_score, best_y = score, y
     return best_y

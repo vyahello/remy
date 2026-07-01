@@ -81,29 +81,27 @@ def test_bottom_keeps_caption_below_video_in_safe_zone():
     assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
 
 
-def test_auto_drops_into_footer_when_safe_zone_full():
-    # the IMG_2411 case: a phone films a laptop screen that fills the WHOLE
-    # safe zone with code/terminal, and the only caption-free region is the
-    # dark desk foreground *below* the safe zone. The caption must escape into
-    # that footer rather than park on the code — even though it means dipping
-    # past SAFE_BOTTOM toward the (short) desk band.
+def test_auto_never_enters_super_footer():
+    # the caption must never drop into the bottom ~22% where the creator's own
+    # TikTok description + hashtags render — even when the whole safe zone is
+    # busy content, it stays bounded by SAFE_BOTTOM rather than double-stacking
+    # on the UI.
     src = {"w": 1080, "h": 1920, "duration": 90, "fps": 30, "audio": True}
     cap_h = 200
-    sal = np.zeros((100, 60), np.float32)
-    sal[:80, :] = 1.0  # top 80% (the entire safe zone) is busy screen content
+    sal = np.ones((100, 60), np.float32)  # content everywhere — no clean band
     lay = L.compute_layout(src, (700, cap_h), "auto", sal)
-    assert lay["cap_y"] + cap_h > int(L.SAFE_BOTTOM * L.OUT_H)   # left safe zone
-    assert lay["cap_y"] + cap_h <= int(L.FOOTER_BOTTOM * L.OUT_H) + 1
-
-
-def test_auto_calm_safe_zone_band_beats_footer():
-    # if a calm band exists INSIDE the safe zone, the caption stays there —
-    # the footer penalty keeps it off the TikTok UI unless forced down.
-    cap_h = 200
-    sal = np.zeros((100, 60), np.float32)
-    sal[:30, :] = 1.0  # only the top is busy; a calm band sits mid-frame
-    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
     assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
+
+
+def test_auto_prefers_static_header_over_moving_body():
+    # a still header at the top (calm) and an active band just below it: the
+    # caption should ride the static header, not get pushed off it. Encodes
+    # the samples' rule — cover a static header, dodge the moving code.
+    cap_h = 180
+    sal = np.zeros((100, 60), np.float32)
+    sal[20:55, :] = 1.0   # the moving body sits below a calm top strip
+    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
+    assert lay["cap_y"] < int(L.SAFE_TOP * L.OUT_H) + int(0.18 * L.OUT_H)
 
 
 def test_auto_drops_onto_calm_bottom():

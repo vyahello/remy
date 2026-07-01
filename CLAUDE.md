@@ -93,17 +93,20 @@ edited clip ready to post (see `docs/IDEAS.md`).
    region. The saliency map (`analysis.saliency_map`) weights **temporal
    motion** (per-pixel mean+peak change — where you type/scroll) co-equally
    with **brightness** (screens glow in dark-room footage), plus edges, so
-   the overlay dodges what's *changing* as much as what's *bright* (the dark
-   keyboard, a hand — never the text being typed). A mild top bias only
-   breaks ties. **Footer escape hatch** (`FOOTER_BOTTOM`/`FOOTER_PENALTY`):
-   a phone filming a laptop/desktop fills the *entire* TikTok safe zone with
-   code/terminal, so the only caption-free region is the dark desk
-   foreground *below* it. When no calm band exists inside the safe zone the
-   search drops into that footer (down to `FOOTER_BOTTOM`≈0.92) instead of
-   parking the caption on the code — but only when the footer is clearly
-   calmer (a flat `FOOTER_PENALTY`), so ordinary footage with a clean band
-   up top is never dragged onto the TikTok UI. `caption.check_caption` warns
-   about wording that risks TikTok moderation.
+   the overlay dodges what's *changing* first — saliency is **motion-led**
+   (`0.65·motion + 0.15·edges + 0.20·brightness`), so a *still* region reads
+   as calm even when it's bright: the caption may sit on a **static header /
+   title bar** but never over the part of the screen that's actively
+   updating (typing, scrolling, a device redrawing). A mild top bias leans
+   an otherwise-tied choice toward the top (where a caption reads cleanest).
+   The caption stays strictly **between the two TikTok UI zones** — never the
+   top ~8% (tab bar), never the bottom ~22% (`SAFE_BOTTOM`), which is where
+   the creator's OWN description + hashtags render, so a caption there would
+   double-stack. Captions are also kept to **one line** whenever they fit
+   (`ONE_LINE_MIN_FONT`; `MAX_CAPTION_CHARS`=34) — a one-line pill is short,
+   professional, and low enough to tuck into a clean strip; only a genuinely
+   long caption wraps to two. `caption.check_caption` warns about wording
+   that risks TikTok moderation.
 7. **Audio** — muted by default (the export is silent so a TikTok sound is
    added in-app; `render` emits `-an`). **The bot's audio UI is currently
    parked** behind `bot.features.audio_enabled()` (env `REMY_AUDIO`, default

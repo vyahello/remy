@@ -85,18 +85,21 @@ def saliency_map(frames: np.ndarray) -> np.ndarray:
       must see (a screen, a device display) is what glows.
     - **edges** — fine detail like on-screen text.
 
-    Motion and brightness are weighted co-equally so the caption avoids
-    what's *changing* as much as what's *bright* — it settles on the
-    region that is both still and dark.
+    Motion LEADS the score: what the viewer must see is what's *changing*
+    (the line being typed, the terminal scrolling, a device redrawing), so
+    the caption dodges motion first. Brightness is a lighter secondary cue —
+    a STILL bright region (a title bar, a static header, a results screen
+    that's stopped updating) is fair game to sit on, and covering it reads
+    fine; only a bright region that is ALSO active is truly off-limits.
+    Over-weighting brightness (the old co-equal split) wrongly pushed the
+    caption off calm headers and onto the moving code below them.
     """
     f = frames.astype(np.float32)
     diff = np.abs(np.diff(f, axis=0))
     motion = 0.6 * diff.mean(axis=0) + 0.4 * diff.max(axis=0)
-    # Brightness is PEAK-weighted, not just averaged: a region that holds
-    # content at ANY point must be dodged — including a results screen that
-    # only lights up at the payoff (the last few seconds of a long clip).
-    # Averaging that away would invite the caption right onto the climax.
-    # The mean term keeps a steadily-lit area from being undersold.
+    # Brightness is PEAK-weighted, not just averaged: a region that lights up
+    # at ANY point is worth a nudge away — but only a nudge now (motion is
+    # what actually protects the payoff, which glows *and* updates).
     bright = 0.6 * f.max(axis=0) + 0.4 * f.mean(axis=0)
     gy, gx = np.gradient(bright)
     edges = np.hypot(gx, gy)
@@ -105,7 +108,7 @@ def saliency_map(frames: np.ndarray) -> np.ndarray:
         m = np.percentile(a, 98)
         return np.clip(a / m, 0, 1) if m > 0 else a
 
-    return 0.4 * norm(motion) + 0.15 * norm(edges) + 0.45 * norm(bright)
+    return 0.65 * norm(motion) + 0.15 * norm(edges) + 0.20 * norm(bright)
 
 
 def smooth(scores: np.ndarray) -> np.ndarray:

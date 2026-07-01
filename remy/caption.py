@@ -63,7 +63,10 @@ RISKY_TERMS: dict[str, str | None] = {
 _RISKY_RE = {term: re.compile(rf"\b{re.escape(term)}\b")
              for term in RISKY_TERMS}
 
-MAX_CAPTION_CHARS = 48
+# A caption is a single scannable line, not a paragraph — long ones read as
+# amateur and (being two-line-tall) can't tuck into a clean strip of the
+# frame. Keep it short enough to stay on one line at a confident size.
+MAX_CAPTION_CHARS = 34
 
 # Persistent-caption sizing. The face is rendered BIG (TikTok captions read
 # large — a timid caption gets scrolled past) but auto-shrinks to fit a
@@ -73,6 +76,10 @@ MAX_CAPTION_CHARS = 48
 CAPTION_FONT = 64
 CAPTION_MIN_FONT = 38
 CAPTION_MAX_W = 960
+# Wrap to a second line only when a single line would shrink below this — a
+# short/medium caption stays one clean, confident line; only a genuinely
+# long one stacks (still big) rather than shrinking to a whisper.
+ONE_LINE_MIN_FONT = 46
 
 # Animated hook card: a bigger version of the caption for the cold open.
 # make_caption fits it to HOOK_CARD_MAX_W (≈ 0.92 * 1080) on its own.
@@ -190,10 +197,18 @@ def make_caption(
     st = STYLES.get(style, STYLES[DEFAULT_STYLE])
     text_color, box_fill = st["text"], st["fill"]
     accent, stroke = st["accent"], st["stroke"]
-    lines = balance_lines(text)
     pad_x, pad_y, gap, radius = 36, 20, 15, 28
     margin = 40                             # transparent room for the glow
 
+    # Prefer ONE line. Only wrap to two when keeping it on a single line
+    # would force the face below ONE_LINE_MIN_FONT — a short/medium caption
+    # then reads as one clean, confident line instead of an amateur stack.
+    one_font = _fit_font_size([text], font_size, CAPTION_MIN_FONT,
+                              pad_x, margin, max_w)
+    if one_font >= ONE_LINE_MIN_FONT:
+        lines = [text]
+    else:
+        lines = balance_lines(text)
     font_size = _fit_font_size(lines, font_size, CAPTION_MIN_FONT,
                                pad_x, margin, max_w)
     font = ImageFont.truetype(FONT_TEXT, font_size)
