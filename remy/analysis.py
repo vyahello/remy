@@ -208,6 +208,65 @@ def cut_spans(
     return out
 
 
+def _src_to_out(segs: list[SpeedSegment], ts: float) -> float:
+    """Map a SOURCE-second timestamp to its OUTPUT-second position.
+
+    Walks the speed segments accumulating output time (each contributes
+    (end-start)/speed output seconds). A `ts` that falls in a gap the edit
+    cut out snaps to the output position of the following segment; one past
+    the end returns the full output duration.
+    """
+    out = 0.0
+    for s, e, sp in segs:
+        if ts < s:            # before this segment (in a removed gap)
+            return out
+        if ts <= e:
+            return out + (ts - s) / sp
+        out += (e - s) / sp
+    return out                # past the end of the edit
+
+
+def caption_windows(
+    segs: list[SpeedSegment],
+    sections: list[tuple[float, str]],
+    min_window: float = 1.6,
+) -> list[tuple[float, float, str]]:
+    """Turn source-time section markers into OUTPUT-time caption windows.
+
+    `sections` is `(source_second, label)` — where each dynamic caption
+    should START, in source time (from `judge.detect_sections`). Each is
+    mapped to output time through `segs` (the speed-assigned edit), then the
+    labels are laid end-to-end so one shows at a time: window i runs from
+    its own output start to the next label's start (the last to the end).
+    The first window always opens at t=0 so the video is never uncaptioned.
+    A window shorter than `min_window` (too brief to read after speed-up) is
+    swallowed by the previous label rather than flashing past.
+    """
+    total = sum((e - s) / sp for s, e, sp in segs)
+    pts = sorted((max(0.0, _src_to_out(segs, t)), lbl.strip())
+                 for t, lbl in sections if lbl and lbl.strip())
+    if not pts:
+        return []
+    wins: list[list] = []
+    for i, (ot, lbl) in enumerate(pts):
+        start = 0.0 if i == 0 else ot
+        end = pts[i + 1][0] if i + 1 < len(pts) else total
+        wins.append([start, min(end, total), lbl])
+    merged: list[list] = []
+    for w in wins:
+        if merged and w[1] - w[0] < min_window:
+            merged[-1][1] = w[1]          # too short — extend previous label
+        elif w[1] - w[0] <= 0:
+            if merged:
+                merged[-1][1] = w[1]
+        else:
+            merged.append(w)
+    if merged:
+        merged[0][0] = 0.0
+        merged[-1][1] = total
+    return [(s, e, lbl) for s, e, lbl in merged]
+
+
 BRIGHT_TAIL_RATIO = 1.35  # tail this much brighter than the dimmest = content
 
 

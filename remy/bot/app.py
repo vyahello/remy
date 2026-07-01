@@ -151,6 +151,12 @@ def setup_keyboard(session: EditSession) -> InlineKeyboardMarkup:
                                  callback_data=OWNCAP),
             InlineKeyboardButton(pick(not session.caption, "🚫", "No caption"),
                                  callback_data=NOCAP)])
+        if session.caption:  # static one-liner vs changing step labels
+            dyn = p.caption_mode == "dynamic"
+            rows.append([InlineKeyboardButton(
+                ("✅ 📝 Step-by-step captions" if dyn
+                 else "📝 Captions: single line → tap for steps"),
+                callback_data=OPT + "captionmode")])
 
     # booleans spell the state out in words (ON ✅ / off) — no cryptic box
     def toggle(icon: str, name: str, on: bool,
@@ -223,7 +229,10 @@ def redo_keyboard(session: EditSession) -> InlineKeyboardMarkup:
     ]
     if session.vertical:  # vertical exports can carry a caption
         buttons += [btn("✍️ New caption", "newcaption"),
-                    btn("🎨 Next style", "style")]
+                    btn("🎨 Next style", "style"),
+                    btn("📝 " + ("Single-line caption" if p.caption_mode
+                                 == "dynamic" else "Step-by-step captions"),
+                        "captionmode")]
     # music section — only when audio is enabled (REMY_AUDIO); parked for now
     if audio_enabled():
         buttons += [

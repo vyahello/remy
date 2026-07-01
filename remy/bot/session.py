@@ -16,6 +16,10 @@ from ..music import STYLE_BPM
 from .features import audio_enabled
 
 VALID_CAPTION_POS = ("auto", "top", "bottom")
+# static = one persistent caption for the whole video; dynamic = a short
+# label per section that changes through the clip (a guided walkthrough,
+# the classic tutorial-TikTok caption style)
+VALID_CAPTION_MODE = ("static", "dynamic")
 VALID_MUSIC = ("synthwave", "phonk", "off")
 MIN_TARGET, MAX_TARGET = 10.0, 120.0
 MIN_ZOOM, MAX_ZOOM = 0.5, 2.5
@@ -31,6 +35,7 @@ class EditParams:
     target: float | None = None  # None = auto (TikTok-friendly length)
     style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
+    caption_mode: str = "static"  # "static" one line | "dynamic" step labels
     hook: bool = False  # cold-open teaser — opt-in (default off)
     trim_start: float = 0.0  # secs hard-cut off the source head (intro)
     trim_end: float = 0.0    # secs hard-cut off the source tail (outro)
@@ -88,6 +93,7 @@ class EditSession:
             trim = f" trim=-{p.trim_start:.1f}s/-{p.trim_end:.1f}s"
         return (f'caption="{self.caption}" target={target} '
                 f"style={p.style} caption_pos={p.caption_pos} "
+                f"caption_mode={p.caption_mode} "
                 f"hook={p.hook} crop={p.crop} zoom={p.zoom:.2f} "
                 f"audio={audio}{trim}")
 
@@ -143,6 +149,10 @@ def validate_updates(raw: dict) -> dict:
     if isinstance(pos, str) and pos in VALID_CAPTION_POS:
         out["caption_pos"] = pos
 
+    mode = raw.get("caption_mode")
+    if isinstance(mode, str) and mode in VALID_CAPTION_MODE:
+        out["caption_mode"] = mode
+
     style = raw.get("style")
     if isinstance(style, str) and style in STYLES:
         out["style"] = style
@@ -192,6 +202,10 @@ def apply_updates(session: EditSession, updates: dict) -> list[str]:
     if "caption_pos" in updates and updates["caption_pos"] != p.caption_pos:
         p.caption_pos = updates["caption_pos"]
         changes.append(f"caption position → {p.caption_pos}")
+    if ("caption_mode" in updates
+            and updates["caption_mode"] != p.caption_mode):
+        p.caption_mode = updates["caption_mode"]
+        changes.append(f"caption mode → {p.caption_mode}")
     if "style" in updates and updates["style"] != p.style:
         p.style = updates["style"]
         changes.append(f"caption style → {p.style}")
@@ -287,6 +301,9 @@ def tweak_updates(key: str, params: EditParams) -> dict:
         if params.music_style is None:
             out["music"] = "phonk"
         return out
+    if key == "captionmode":
+        nxt = "dynamic" if params.caption_mode == "static" else "static"
+        return {"caption_mode": nxt}
     if key == "style":
         order = list(STYLES)
         idx = order.index(params.style) if params.style in order else 0

@@ -28,6 +28,34 @@ def test_action_speedup_fits_ceiling_when_idle_alone_cannot():
     assert at_sped <= A.AUTO_HARD_MAX + 1       # now fits ~2 min
 
 
+def test_caption_windows_maps_source_to_output_time():
+    # 100s of source at 2x + 20s at 1x -> 50s + 20s = 70s output. Section
+    # markers in SOURCE time land at their OUTPUT positions, laid end-to-end.
+    segs = [(0.0, 100.0, 2.0), (100.0, 120.0, 1.0)]
+    sections = [(0.0, "A"), (60.0, "B"), (100.0, "C")]
+    wins = A.caption_windows(segs, sections)
+    assert wins[0][0] == 0.0                 # first window opens at t=0
+    assert abs(wins[-1][1] - 70.0) < 1e-6    # last closes at full output len
+    # B starts at source 60 -> output 30; C at source 100 -> output 50
+    starts = [round(w[0], 2) for w in wins]
+    labels = [w[2] for w in wins]
+    assert labels == ["A", "B", "C"]
+    assert starts == [0.0, 30.0, 50.0]
+
+
+def test_caption_windows_swallows_too_short():
+    # a label whose window is under min_window is merged into the previous one
+    segs = [(0.0, 60.0, 1.0)]
+    sections = [(0.0, "keep"), (58.9, "blink")]  # 2nd window ~1.1s < 1.6
+    wins = A.caption_windows(segs, sections, min_window=1.6)
+    assert [w[2] for w in wins] == ["keep"]
+    assert wins[0] == (0.0, 60.0, "keep")
+
+
+def test_caption_windows_empty():
+    assert A.caption_windows([(0.0, 10.0, 1.0)], []) == []
+
+
 def test_classify_three_tiers():
     # weight the distribution so the top values exceed the 80th percentile
     scores = np.array([0.0] * 20 + [5.0] * 20 + [50.0] * 10, dtype=float)

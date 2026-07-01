@@ -572,6 +572,98 @@ def detect_mistakes(
     return clean_cut_spans(reply, duration)
 
 
+SECTION_PROMPT = CREATOR_CONTEXT + """
+You are a TikTok editor writing the CHANGING on-screen captions for a
+coding / build video — a short label per section that narrates what the
+viewer is watching right then, like a guided walkthrough. Each frame is
+labelled with its timestamp in seconds (the t…s in the filename).
+
+Frames sampled in order from the {duration:.0f}s recording:
+{frames}
+
+Break the video into its natural steps (a handful — 4 to 7) and, for each,
+write ONE short caption plus the SOURCE-second where that step begins:
+- read the on-screen UI / code to name what actually happens ("Require the
+  display", "Draw Hello World", "Push it to the device", "Runs on
+  hardware") — never invent a step you can't see in the frames;
+- each label ≤ {max_chars} characters, plain text, a crisp tips/tutorial
+  voice, no hashtags / quotes / markdown;
+- one or two relevant emoji only if they fit; never sensational or
+  policy-risky words (hack, attack, exploit, deauth, crack, bypass, spy,
+  payload, steal, free wifi);
+- the FIRST step starts at 0; steps in ascending time order.
+
+Reply with ONLY a JSON object, no other text:
+{{"sections": [{{"start": <seconds>, "label": "<short caption>"}}]}}
+"""
+
+SECTION_MAX = 7          # cap the number of on-screen labels
+SECTION_MAX_FRAMES = 16  # cap sampled frames so the prompt stays cheap
+
+
+def clean_sections(
+    reply: dict, duration: float
+) -> list[tuple[float, str]]:
+    """Turn Claude's {sections:[…]} into safe (source-second, label) pairs.
+
+    Clamps each start into the clip, drops empty / over-long / policy-risky
+    labels (`check_caption`), sorts by time, collapses repeats, and caps the
+    count at SECTION_MAX. Returns [] when nothing usable survives so the
+    caller can fall back to a single static caption.
+    """
+    raw = reply.get("sections", [])
+    if not isinstance(raw, list):
+        return []
+    out: list[tuple[float, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        label = label.strip()
+        if len(label) > MAX_CAPTION_CHARS or check_caption(label):
+            continue
+        try:
+            start = float(item.get("start", 0))
+        except (TypeError, ValueError):
+            continue
+        out.append((max(0.0, min(start, duration)), label))
+    out.sort(key=lambda x: x[0])
+    dedup: list[tuple[float, str]] = []
+    for st, lbl in out:
+        if dedup and dedup[-1][1] == lbl:
+            continue
+        dedup.append((round(st, 2), lbl))
+    return dedup[:SECTION_MAX]
+
+
+def detect_sections(
+    video: str, duration: float
+) -> list[tuple[float, str]]:
+    """Label the video's natural steps for dynamic (changing) captions.
+
+    Samples frames across the clip and has Claude break it into a handful of
+    ordered steps, each a short caption + the source-second it begins. The
+    caller maps those source times to output time (`analysis.caption_windows`)
+    and renders one label at a time. Best-effort: returns [] on an unusable
+    reply (the caller falls back to the single static caption). Raises
+    JudgeUnavailable / ValueError on a hard failure.
+    """
+    n = min(SECTION_MAX_FRAMES, max(N_FRAMES, round(duration / 20)))
+    tmp = tempfile.mkdtemp(prefix="remy_sections_")
+    try:
+        frames = extract_frames(
+            video, spread_times(duration, n=n, margin=0.0), tmp)
+        prompt = SECTION_PROMPT.format(
+            frames="\n".join(frames), duration=duration,
+            max_chars=MAX_CAPTION_CHARS)
+        reply = parse_json_obj(run_claude(prompt))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return clean_sections(reply, duration)
+
+
 MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight
 
 # Hashtags TikTok suppresses, has retired, or that draw a moderation cloud

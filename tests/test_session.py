@@ -350,3 +350,22 @@ def test_fallback_music_tempo_and_mix():
         "new_music_mix": True}
     # plain "faster" without a music word stays out of music territory
     assert "music_bpm" not in fallback_updates("faster", p)
+
+
+def test_caption_mode_toggle():
+    from remy.bot.session import tweak_updates, validate_updates
+    p = _session().params
+    assert p.caption_mode == "static"
+    upd = tweak_updates("captionmode", p)          # button flips it
+    assert upd == {"caption_mode": "dynamic"}
+    assert validate_updates(upd) == {"caption_mode": "dynamic"}
+    # invalid modes are dropped by the gate
+    assert validate_updates({"caption_mode": "sideways"}) == {}
+
+
+def test_apply_caption_mode_change():
+    s = _session()
+    changes = apply_updates(s, {"caption_mode": "dynamic"})
+    assert s.params.caption_mode == "dynamic"
+    assert changes == ["caption mode → dynamic"]
+    assert "caption_mode=dynamic" in s.summary()

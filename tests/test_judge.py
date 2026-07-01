@@ -206,3 +206,34 @@ def test_clean_cut_spans_handles_garbage():
     assert J.clean_cut_spans({}, 20.0) == []
     assert J.clean_cut_spans({"cuts": "nope"}, 20.0) == []
     assert J.clean_cut_spans({"cuts": [{"start": "x"}]}, 20.0) == []
+
+
+# ----------------------------------------------------------- clean_sections
+
+def test_clean_sections_sorts_clamps_and_caps():
+    reply = {"sections": [
+        {"start": 40, "label": "Draw Hello World"},
+        {"start": 0, "label": "Require display + device"},
+        {"start": 999, "label": "Runs on hardware ⚡"},   # clamped to duration
+    ]}
+    out = J.clean_sections(reply, 120.0)
+    assert [lbl for _, lbl in out] == [
+        "Require display + device", "Draw Hello World", "Runs on hardware ⚡"]
+    assert out[0][0] == 0.0
+    assert out[-1][0] == 120.0            # clamped into the clip
+
+
+def test_clean_sections_drops_risky_and_overlong():
+    reply = {"sections": [
+        {"start": 0, "label": "how to hack wifi"},   # risky -> dropped
+        {"start": 5, "label": "x" * 80},             # too long -> dropped
+        {"start": 10, "label": "Push it to the device"},
+    ]}
+    out = J.clean_sections(reply, 60.0)
+    assert out == [(10.0, "Push it to the device")]
+
+
+def test_clean_sections_handles_garbage():
+    assert J.clean_sections({}, 60.0) == []
+    assert J.clean_sections({"sections": "nope"}, 60.0) == []
+    assert J.clean_sections({"sections": [1, "x", {}]}, 60.0) == []
