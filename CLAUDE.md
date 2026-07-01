@@ -95,8 +95,15 @@ edited clip ready to post (see `docs/IDEAS.md`).
    with **brightness** (screens glow in dark-room footage), plus edges, so
    the overlay dodges what's *changing* as much as what's *bright* (the dark
    keyboard, a hand — never the text being typed). A mild top bias only
-   breaks ties. `caption.check_caption` warns about wording that risks
-   TikTok moderation.
+   breaks ties. **Footer escape hatch** (`FOOTER_BOTTOM`/`FOOTER_PENALTY`):
+   a phone filming a laptop/desktop fills the *entire* TikTok safe zone with
+   code/terminal, so the only caption-free region is the dark desk
+   foreground *below* it. When no calm band exists inside the safe zone the
+   search drops into that footer (down to `FOOTER_BOTTOM`≈0.92) instead of
+   parking the caption on the code — but only when the footer is clearly
+   calmer (a flat `FOOTER_PENALTY`), so ordinary footage with a clean band
+   up top is never dragged onto the TikTok UI. `caption.check_caption` warns
+   about wording that risks TikTok moderation.
 7. **Audio** — muted by default (the export is silent so a TikTok sound is
    added in-app; `render` emits `-an`). **The bot's audio UI is currently
    parked** behind `bot.features.audio_enabled()` (env `REMY_AUDIO`, default

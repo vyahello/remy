@@ -81,6 +81,31 @@ def test_bottom_keeps_caption_below_video_in_safe_zone():
     assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
 
 
+def test_auto_drops_into_footer_when_safe_zone_full():
+    # the IMG_2411 case: a phone films a laptop screen that fills the WHOLE
+    # safe zone with code/terminal, and the only caption-free region is the
+    # dark desk foreground *below* the safe zone. The caption must escape into
+    # that footer rather than park on the code — even though it means dipping
+    # past SAFE_BOTTOM toward the (short) desk band.
+    src = {"w": 1080, "h": 1920, "duration": 90, "fps": 30, "audio": True}
+    cap_h = 200
+    sal = np.zeros((100, 60), np.float32)
+    sal[:80, :] = 1.0  # top 80% (the entire safe zone) is busy screen content
+    lay = L.compute_layout(src, (700, cap_h), "auto", sal)
+    assert lay["cap_y"] + cap_h > int(L.SAFE_BOTTOM * L.OUT_H)   # left safe zone
+    assert lay["cap_y"] + cap_h <= int(L.FOOTER_BOTTOM * L.OUT_H) + 1
+
+
+def test_auto_calm_safe_zone_band_beats_footer():
+    # if a calm band exists INSIDE the safe zone, the caption stays there —
+    # the footer penalty keeps it off the TikTok UI unless forced down.
+    cap_h = 200
+    sal = np.zeros((100, 60), np.float32)
+    sal[:30, :] = 1.0  # only the top is busy; a calm band sits mid-frame
+    lay = L.compute_layout(SRC, (700, cap_h), "auto", sal)
+    assert lay["cap_y"] + cap_h <= int(L.SAFE_BOTTOM * L.OUT_H)
+
+
 def test_auto_drops_onto_calm_bottom():
     # the IMG_2110 case: bright/active laptop screen fills the top, the dark
     # keyboard + hand is calm below — the caption must leave the top half and
