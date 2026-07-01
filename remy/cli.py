@@ -21,6 +21,7 @@ from .analysis import (
     assign_speeds,
     auto_target,
     beat_align,
+    caption_windows,
     classify,
     content_crop,
     cut_spans,
@@ -42,10 +43,10 @@ from .caption import (
     make_caption,
     make_hook_card,
 )
-from .layout import compute_layout, hook_card_y
+from .layout import OUT_W, compute_layout, hook_card_y
 from .music import STYLE_BPM, generate, write_wav
 from .render import HOOK_CARD_DUR, look_filter, render
-from .types import HookCard, Layout, SourceInfo, SpeedSegment
+from .types import CaptionSpec, HookCard, Layout, SourceInfo, SpeedSegment
 
 
 def is_landscape(src: SourceInfo) -> bool:
@@ -83,6 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--caption-pos", choices=["auto", "top", "bottom"],
                     default="auto",
                     help="auto = place over the calmest region (default)")
+    ap.add_argument("--caption-mode", choices=["static", "dynamic"],
+                    default="static",
+                    help="static = one caption; dynamic = changing step "
+                         "labels (needs the claude CLI to label the steps)")
     ap.add_argument("--hook", action=argparse.BooleanOptionalAction,
                     default=False,
                     help="Cold-open on the most action-packed beat of the "
@@ -246,6 +251,8 @@ def edit(
     target: float | str | None = "auto",
     style: str = DEFAULT_STYLE,
     caption_pos: str = "auto",
+    caption_mode: str = "static",
+    sections: list[tuple[float, str]] | None = None,
     hook: bool = False,
     trim_start: float = 0.0,
     trim_end: float = 0.0,
@@ -335,6 +342,7 @@ def edit(
     tmp = tempfile.mkdtemp(prefix="remy_")
     try:
         cap_png: str | None = None
+        captions: list[CaptionSpec] | None = None
         lay: Layout | None = None
         if landscape:
             notify("landscape source: native resolution kept, no caption "
@@ -352,7 +360,25 @@ def edit(
                 ay1 = max(ay0 + 2, (crop[1] + crop[3]) * ah // src["h"])
                 lay_frames = frames[:, ay0:ay1, ax0:ax1]
                 lay_src = cast(SourceInfo, dict(src, w=crop[2], h=crop[3]))
-            if caption.strip():
+            windows = _dynamic_windows(
+                caption_mode, sections, input_path, src["duration"], segs,
+                hook_win) if caption.strip() else None
+            if windows:
+                sal = (saliency_map(lay_frames)
+                       if caption_pos == "auto" else None)
+                captions = []
+                for i, (ws, we, label) in enumerate(windows):
+                    png = os.path.join(tmp, f"capdyn{i}.png")
+                    cw, ch = make_caption(label, png, style=style)
+                    if lay is None:  # one layout for the whole run (same y)
+                        lay = compute_layout(
+                            lay_src, (cw, ch), caption_pos, sal)
+                    captions.append({"png": png, "x": (OUT_W - cw) // 2,
+                                     "y": lay["cap_y"], "start": ws,
+                                     "end": we})
+                notify(f"dynamic captions: {len(captions)} step labels "
+                       f"at y={lay['cap_y']}")  # type: ignore[index]
+            elif caption.strip():
                 cap_png = os.path.join(tmp, "caption.png")
                 cap_size = make_caption(caption, cap_png, style=style)
                 sal = (saliency_map(lay_frames)
@@ -395,10 +421,61 @@ def edit(
         notify("rendering…")
         render(input_path, segs, cap_png, src, lay, out,
                crf, preset, music_path, keep_audio, crop=crop, look=look,
-               hook_card=hcard, hook_card_png=hcard_png)
+               hook_card=hcard, hook_card_png=hcard_png, captions=captions)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
+
+
+def _dynamic_windows(
+    caption_mode: str,
+    sections: list[tuple[float, str]] | None,
+    input_path: str,
+    duration: float,
+    segs: list[SpeedSegment],
+    hook_win: tuple[float, float] | None,
+) -> list[tuple[float, float, str]] | None:
+    """Output-time (start, end, label) windows for dynamic captions, or None.
+
+    Returns None (→ the caller falls back to the single static caption) when
+    the mode is static or no section labels are available. The section
+    markers are mapped to output time through the BODY segments; a cold-open
+    hook (prepended, out of source order) is handled by mapping without it
+    and shifting every window past the teaser, which the first label covers.
+    """
+    if caption_mode != "dynamic":
+        return None
+    secs = sections
+    if secs is None:
+        secs = _detect_sections_cli(input_path, duration)
+    if not secs:
+        return None
+    body = segs[1:] if hook_win else segs
+    windows = caption_windows(body, secs)
+    if not windows:
+        return None
+    if hook_win:
+        hl = hook_win[1] - hook_win[0]
+        windows = [(s + hl, e + hl, lbl) for s, e, lbl in windows]
+        windows[0] = (0.0, windows[0][1], windows[0][2])  # cover the teaser
+    return windows
+
+
+def _detect_sections_cli(
+    input_path: str, duration: float
+) -> list[tuple[float, str]] | None:
+    """Run the Claude section pass for dynamic captions (CLI best-effort)."""
+    from .judge import JudgeUnavailable, claude_available, detect_sections
+    if not claude_available():
+        print("⚠ dynamic captions need the claude CLI on PATH; "
+              "using one static caption", file=sys.stderr)
+        return None
+    try:
+        secs = detect_sections(input_path, duration)
+    except (JudgeUnavailable, ValueError) as exc:
+        print(f"⚠ section detection unavailable: {exc}", file=sys.stderr)
+        return None
+    return secs or None
 
 
 def _detect_mistakes_cli(input_path: str) -> list[tuple[float, float]] | None:
@@ -442,6 +519,7 @@ def main(argv: list[str] | None = None) -> int:
             target=args.target,
             style=args.style,
             caption_pos=args.caption_pos,
+            caption_mode=args.caption_mode,
             hook=args.hook,
             trim_start=args.trim_start,
             trim_end=args.trim_end,
