@@ -208,8 +208,9 @@ def test_mix_and_norm_variants():
 def test_format_video_parity_single_vs_segment():
     # the per-segment chain must format identically to the single-pass
     # one (same crop/scale/caption), just fed a different input label
-    single = R._format_video("[vc]", SRC, LAY, None, "", 60, "[1:v]")
-    segment = R._format_video("[vt]", SRC, LAY, None, "", 60, "[1:v]")
+    caps = [("[1:v]", LAY["cap_x"], LAY["cap_y"], "")]
+    single = R._format_video("[vc]", SRC, LAY, None, "", 60, caps)
+    segment = R._format_video("[vt]", SRC, LAY, None, "", 60, caps)
     assert single.replace("[vc]", "[X]") == segment.replace("[vt]", "[X]")
 
 
@@ -230,6 +231,20 @@ def test_filtergraph_hook_card_branch_vertical():
     # the persistent caption is suppressed until the card fades out
     assert (f"overlay={LAY['cap_x']}:{LAY['cap_y']}:"
             f"enable='gt(t,{R.HOOK_CARD_DUR})'" in fc)
+
+
+def test_filtergraph_dynamic_captions_time_ranged():
+    # dynamic mode: each label is its own caption input, overlaid only in
+    # its output-time window (one shows at a time)
+    segs = [(0, 20, 1.0)]
+    caps = [
+        {"png": "/tmp/a.png", "x": 60, "y": 1300, "start": 0.0, "end": 8.0},
+        {"png": "/tmp/b.png", "x": 70, "y": 1300, "start": 8.0, "end": 20.0},
+    ]
+    fc, v, _a = R.build_filtergraph(segs, SRC, LAY, 60, captions=caps)
+    assert v == "[vout]"
+    assert "[1:v]overlay=60:1300:enable='between(t,0.000,8.000)'" in fc
+    assert "[2:v]overlay=70:1300:enable='between(t,8.000,20.000)'" in fc
 
 
 def test_filtergraph_no_hook_card_by_default():
@@ -262,18 +277,20 @@ def test_filtergraph_hook_card_music_index_after_card():
 def test_format_video_card_parity_single_vs_segment():
     # the single-pass concat input and the two-pass per-segment input must
     # produce an identical card chain (only the source label differs)
+    caps = [("[1:v]", LAY["cap_x"], LAY["cap_y"], "")]
     single = R._format_video("[vc]", SRC, LAY, None, "", 60,
-                             "[1:v]", "[2:v]", CARD)
+                             caps, "[2:v]", CARD)
     segment = R._format_video("[vt]", SRC, LAY, None, "", 60,
-                              "[1:v]", "[2:v]", CARD)
+                              caps, "[2:v]", CARD)
     assert single.replace("[vc]", "[X]") == segment.replace("[vt]", "[X]")
     assert "[hcard]" in single and "enable='lte(t," in single
 
 
 def test_format_video_card_pushin_adds_base_scale():
     card = dict(CARD, pushin=True)
+    caps = [("[1:v]", LAY["cap_x"], LAY["cap_y"], "")]
     fc = R._format_video("[vc]", SRC, LAY, None, "", 60,
-                         "[1:v]", "[2:v]", card)
+                         caps, "[2:v]", card)
     assert "[pbase]" in fc and "crop=1080:1920" in fc
 
 

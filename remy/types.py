@@ -26,6 +26,22 @@ class Layout(TypedDict):
     cap_y: int
 
 
+class CaptionSpec(TypedDict):
+    """One time-ranged caption for dynamic (changing) captions.
+
+    `png` is a pre-rendered pill; `x`/`y` its top-left on the 1080x1920
+    canvas; `start`/`end` the OUTPUT-second window it is visible. Static
+    mode uses a single caption baked for the whole clip and does not go
+    through this; dynamic mode passes a list, one visible at a time.
+    """
+
+    png: str
+    x: int
+    y: int
+    start: float
+    end: float
+
+
 class HookCard(TypedDict):
     """Animated cold-open text card overlaid on the opening (vertical only).
 

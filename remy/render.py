@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from .layout import OUT_H, OUT_W
-from .types import HookCard, Layout, SourceInfo, SpeedSegment
+from .types import CaptionSpec, HookCard, Layout, SourceInfo, SpeedSegment
 
 # The single ffmpeg graph opens one live seek-decoder per segment, all at
 # once — each a full HEVC decoder context holding a DPB of reference frames.
@@ -94,15 +94,40 @@ def encoder_params(screen: bool) -> str:
     return "aq-mode=3:deblock=-1,-1" if screen else "aq-mode=3"
 
 
-def _hook_card_chain(cap_label: str, card_label: str,
+# One caption overlay: (input_label, x, y, enable_expr). enable_expr "" is
+# always-on (static, one caption for the whole clip); a dynamic caption
+# carries a `between(t,…)` window so one label shows at a time.
+CapOverlay = tuple[str, int, int, str]
+
+
+def _caption_overlays(base: str, caps: list[CapOverlay]) -> list[str]:
+    """Chain time-ranged caption overlays from `base`, ending at `[vout]`.
+
+    Each overlay consumes the previous stage and its own caption input;
+    the last one appends the pixel-format conversion and labels `[vout]`.
+    An empty `enable_expr` overlays for the whole clip (static caption).
+    """
+    parts: list[str] = []
+    cur = base
+    for i, (label, x, y, en) in enumerate(caps):
+        last = i == len(caps) - 1
+        en_s = f":enable='{en}'" if en else ""
+        tail = ",format=yuv420p10le" if last else ""
+        out = "[vout]" if last else f"[capc{i}]"
+        parts.append(f"{cur}{label}overlay={x}:{y}{en_s}{tail}{out}")
+        cur = out
+    return parts
+
+
+def _hook_card_chain(caps: list[CapOverlay], card_label: str,
                      lay: Layout, card: HookCard) -> str:
     """The post-`[base]` chain when an animated hook card is overlaid.
 
     Consumes `[base]`, produces `[vout]`: optional footage push-in, the
     card stream (alpha fade in/out + a 0.92→1.0 scale ramp, alpha-safe so
     the rounded box stays transparent), a dimmed backing box, the card
-    overlay (recentered as it scales), then the persistent caption — gated
-    to start only after the card fades so just one text block shows in the
+    overlay (recentered as it scales), then the caption(s) — each gated to
+    start only after the card fades so just one text block shows in the
     opening second.
     """
     dur, fade = HOOK_CARD_DUR, HOOK_CARD_FADE
@@ -130,10 +155,11 @@ def _hook_card_chain(cap_label: str, card_label: str,
     parts.append(
         f"[dim][hcard]overlay=x=(W-w)/2:y={cy}:eval=frame:"
         f"enable='lte(t,{dur})'[wc]")
-    if cap_label:
-        parts.append(
-            f"[wc]{cap_label}overlay={lay['cap_x']}:{lay['cap_y']}:"
-            f"enable='gt(t,{dur})',format=yuv420p10le[vout]")
+    if caps:
+        # hold every caption until the card has faded (AND its own window)
+        gated = [(lbl, x, y, f"gt(t,{dur})*({en})" if en else f"gt(t,{dur})")
+                 for lbl, x, y, en in caps]
+        parts += _caption_overlays("[wc]", gated)
     else:
         parts.append("[wc]format=yuv420p10le[vout]")
     return ";".join(parts)
@@ -141,17 +167,18 @@ def _hook_card_chain(cap_label: str, card_label: str,
 
 def _format_video(in_label: str, src: SourceInfo, lay: Layout | None,
                   crop: tuple[int, int, int, int] | None, look: str,
-                  fps: int, cap_label: str, card_label: str = "",
+                  fps: int, caps: list[CapOverlay], card_label: str = "",
                   card: HookCard | None = None) -> str:
     """Crop → fps → scale → grade → (pad + caption) chain to `[vout]`.
 
     Shared by the single-pass graph (fed the concatenated `[vc]`) and the
     per-segment graph (fed one trimmed segment) so framing/scaling/caption
     placement is bit-for-bit identical either way. `lay=None` is landscape
-    (native resolution, no caption); otherwise the video is scaled into
-    the layout box, padded to 1080x1920 and the caption is overlaid. When
-    `card` is given (vertical only) the animated hook card rides on top of
-    the opening — see `_hook_card_chain`.
+    (native resolution, no caption); otherwise the video is scaled into the
+    layout box, padded to 1080x1920 and the caption(s) overlaid — one entry
+    in `caps` for a static caption, several time-ranged entries for dynamic.
+    When `card` is given (vertical only) the animated hook card rides on top
+    of the opening — see `_hook_card_chain`.
     """
     crop_f = f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}," if crop else ""
     look_f = f"{look}," if look else ""
@@ -164,10 +191,9 @@ def _format_video(in_label: str, src: SourceInfo, lay: Layout | None,
     base = (f"{in_label}{crop_f}fps={fps},scale={vw}:{vh}:flags=lanczos,"
             f"{look_f}pad={OUT_W}:{OUT_H}:{vx}:{vy}:black[base]")
     if card is not None and card_label:
-        return base + ";" + _hook_card_chain(cap_label, card_label, lay, card)
-    if cap_label:  # vertical with a baked caption
-        return (f"{base};[base]{cap_label}overlay="
-                f"{lay['cap_x']}:{lay['cap_y']},format=yuv420p10le[vout]")
+        return base + ";" + _hook_card_chain(caps, card_label, lay, card)
+    if caps:  # vertical with baked caption(s)
+        return ";".join([base, *_caption_overlays("[base]", caps)])
     return f"{base};[base]format=yuv420p10le[vout]"  # vertical, no caption
 
 
@@ -209,6 +235,7 @@ def build_filtergraph(
     look: str = "",
     hook_card: HookCard | None = None,
     has_caption: bool = True,
+    captions: list[CaptionSpec] | None = None,
 ) -> tuple[str, str, str | None]:
     """Return (filter_complex string, video_label, audio_label|None).
 
@@ -232,20 +259,21 @@ def build_filtergraph(
     """
     want_ambient = src["audio"] and (with_music or keep_audio)
     n = len(segs)
-    # input order: segments, caption (vertical+caption), hook card
-    # (vertical+card), then music. Each index is only consumed when that
-    # input is actually present, so a vertical clip with no caption skips
-    # the caption slot entirely.
-    cap_present = lay is not None and has_caption
+    # input order: segments, then caption PNG(s) — one for a static caption,
+    # several time-ranged ones for dynamic — then the hook card, then music.
+    # Each index is only consumed when that input is actually present, so a
+    # vertical clip with no caption skips the caption slot entirely.
+    caps: list[CapOverlay] = []
+    if lay is not None:
+        if captions:
+            for j, c in enumerate(captions):
+                caps.append((f"[{n + j}:v]", c["x"], c["y"],
+                             f"between(t,{c['start']:.3f},{c['end']:.3f})"))
+        elif has_caption:
+            caps.append((f"[{n}:v]", lay["cap_x"], lay["cap_y"], ""))
     has_card = lay is not None and hook_card is not None
-    idx = n
-    cap_idx = idx
-    if cap_present:
-        idx += 1
-    card_idx = idx
-    if has_card:
-        idx += 1
-    mus_idx = idx
+    card_idx = n + len(caps)
+    mus_idx = card_idx + (1 if has_card else 0)
 
     fc: list[str] = []
     vlabels: list[str] = []
@@ -267,8 +295,7 @@ def build_filtergraph(
         ambient = None
 
     fc.append(_format_video(
-        "[vc]", src, lay, crop, look, fps,
-        f"[{cap_idx}:v]" if cap_present else "",
+        "[vc]", src, lay, crop, look, fps, caps,
         f"[{card_idx}:v]" if has_card else "",
         hook_card if lay is not None else None))
     audio_out = _mix_and_norm(
@@ -342,17 +369,24 @@ def render(
     look: str = "",
     hook_card: HookCard | None = None,
     hook_card_png: str | None = None,
+    captions: list[CaptionSpec] | None = None,
 ) -> str:
     """Encode the edit. Picks the single-pass graph when its simultaneous
     decoders fit the memory budget, else the bounded two-pass (one decoder
-    at a time) for heavy or heavily-cut clips — see `use_two_pass`."""
+    at a time) for heavy or heavily-cut clips — see `use_two_pass`.
+
+    `captions` (dynamic mode) is a list of time-ranged caption PNGs, one
+    shown at a time; when it is None the single `caption_png` is baked for
+    the whole clip (static mode)."""
     if use_two_pass(segs, src):
         return _render_segmented(
             path, segs, caption_png, src, lay, out_path, crf, preset,
-            music_path, keep_audio, crop, look, hook_card, hook_card_png)
+            music_path, keep_audio, crop, look, hook_card, hook_card_png,
+            captions)
     return _render_single(
         path, segs, caption_png, src, lay, out_path, crf, preset,
-        music_path, keep_audio, crop, look, hook_card, hook_card_png)
+        music_path, keep_audio, crop, look, hook_card, hook_card_png,
+        captions)
 
 
 def _hook_card_input(fps: int, hook_card_png: str) -> list[str]:
@@ -368,6 +402,7 @@ def _render_single(
     preset: str, music_path: str | None, keep_audio: bool,
     crop: tuple[int, int, int, int] | None, look: str,
     hook_card: HookCard | None = None, hook_card_png: str | None = None,
+    captions: list[CaptionSpec] | None = None,
 ) -> str:
     """One ffmpeg graph: every segment a seek-decoded input, concat, encode.
 
@@ -377,16 +412,22 @@ def _render_single(
     fps = min(60, round(src["fps"]))
     has_card = (lay is not None and hook_card is not None
                 and bool(hook_card_png))
+    dyn = bool(captions) and lay is not None
     fc, vlabel, alabel = build_filtergraph(
         segs, src, lay, fps, with_music=bool(music_path),
         keep_audio=keep_audio, crop=crop, look=look,
         hook_card=hook_card if has_card else None,
-        has_caption=bool(caption_png) and lay is not None)
+        has_caption=bool(caption_png) and lay is not None,
+        captions=captions if dyn else None)
 
     cmd: list[str] = ["ffmpeg", "-y", "-v", "warning", "-stats"]
     for s, e, _sp in segs:
         cmd += ["-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", path]
-    if caption_png and lay is not None:
+    if dyn:
+        assert captions is not None
+        for c in captions:
+            cmd += ["-i", c["png"]]
+    elif caption_png and lay is not None:
         cmd += ["-i", caption_png]
     if has_card:
         assert hook_card_png is not None
@@ -415,6 +456,7 @@ def _render_segmented(
     preset: str, music_path: str | None, keep_audio: bool,
     crop: tuple[int, int, int, int] | None, look: str,
     hook_card: HookCard | None = None, hook_card_png: str | None = None,
+    captions: list[CaptionSpec] | None = None,
 ) -> str:
     """Bounded two-pass render for long, heavily-cut clips.
 
@@ -426,25 +468,44 @@ def _render_segmented(
     N-simultaneous-decoders memory blow-up on a small box. The animated
     hook card rides only the first segment (output time t=0), so it uses
     the same `_format_video` card branch as the single-pass path.
+
+    Dynamic captions are windowed in *output* time; each segment is encoded
+    at its own t=0, so a caption's global window is re-expressed as a LOCAL
+    `between(t,…)` on whichever segments it overlaps (a label spanning a cut
+    simply continues on the next part).
     """
     fps = min(60, round(src["fps"]))
     want_ambient = src["audio"] and (bool(music_path) or keep_audio)
+    dyn = bool(captions) and lay is not None
     tmp = tempfile.mkdtemp(prefix="remy_seg_")
     try:
         # --- pass 1: each segment -> a fully-formatted intermediate ---
         parts: list[str] = []
+        g_out = 0.0  # this segment's start in OUTPUT time
         for i, (s, e, sp) in enumerate(segs):
             seg_out = os.path.join(tmp, f"seg{i:04d}.mp4")
-            # input [0] is the segment video; the caption (if any) and the
-            # hook card (opening segment only) follow, so their labels shift
-            # when there is no caption to skip.
-            cap_present = bool(caption_png) and lay is not None
+            seg_dur = (e - s) / sp
+            # input [0] is the segment video; caption PNG(s) and the hook
+            # card (opening segment only) follow, so their labels shift with
+            # how many captions this segment actually carries.
             seg_card = (hook_card if i == 0 and lay is not None
                         and hook_card_png else None)
             inp = 1
-            cap_label = ""
-            if cap_present:
-                cap_label = f"[{inp}:v]"
+            caps: list[CapOverlay] = []
+            seg_pngs: list[str] = []
+            if dyn:
+                assert captions is not None
+                for c in captions:  # keep only labels overlapping this segment
+                    a = max(c["start"], g_out)
+                    b = min(c["end"], g_out + seg_dur)
+                    if b - a > 0.05:
+                        caps.append((f"[{inp}:v]", c["x"], c["y"], "between("
+                                     f"t,{a - g_out:.3f},{b - g_out:.3f})"))
+                        seg_pngs.append(c["png"])
+                        inp += 1
+            elif caption_png and lay is not None:
+                caps.append((f"[{inp}:v]", lay["cap_x"], lay["cap_y"], ""))
+                seg_pngs.append(caption_png)
                 inp += 1
             card_label = ""
             if seg_card:
@@ -452,12 +513,11 @@ def _render_segmented(
                 inp += 1
             fc = (f"[0:v]setpts=(PTS-STARTPTS)/{sp:.4f}[vt];"
                   + _format_video("[vt]", src, lay, crop, look, fps,
-                                  cap_label, card_label, seg_card))
+                                  caps, card_label, seg_card))
             cmd = ["ffmpeg", "-y", "-v", "error",
                    "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", path]
-            if cap_present:
-                assert caption_png is not None
-                cmd += ["-i", caption_png]
+            for png in seg_pngs:
+                cmd += ["-i", png]
             if seg_card:
                 assert hook_card_png is not None
                 cmd += _hook_card_input(fps, hook_card_png)
@@ -475,6 +535,7 @@ def _render_segmented(
                     "-video_track_timescale", "90000", seg_out]
             _run(cmd, seg_out)
             parts.append(seg_out)
+            g_out += seg_dur
 
         # --- pass 2: concat-demux the parts, add music + loudnorm ---
         listf = os.path.join(tmp, "concat.txt")
