@@ -4,6 +4,19 @@ import pytest
 from remy import analysis as A
 
 
+def test_maxspeed_rescues_long_camera_clip_under_hard_max():
+    # a long clip whose idle (dead) time floors it OVER the ~2-min ceiling at
+    # the camera fast cap comes back under it once the idle tiers may use the
+    # full MAX_SPEED — the escalation cli.plan applies when camera-capped
+    # output would blow past AUTO_HARD_MAX. Action time is untouched.
+    runs = [[0.0, 40.0, 2], [40.0, 440.0, 0]]  # 40s action + 400s dead
+    _, capped = A.assign_speeds(runs, 90.0, 1.0, A.CAMERA_FAST_MAX)
+    _, full = A.assign_speeds(runs, 90.0, 1.0, A.MAX_SPEED)
+    assert capped > A.AUTO_HARD_MAX       # 40 + 400/4 = 140s, over the ceiling
+    assert full <= A.AUTO_HARD_MAX        # 40 + 400/6 ≈ 107s, back under it
+    assert full < capped
+
+
 def test_classify_three_tiers():
     # weight the distribution so the top values exceed the 80th percentile
     scores = np.array([0.0] * 20 + [5.0] * 20 + [50.0] * 10, dtype=float)

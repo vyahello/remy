@@ -12,6 +12,7 @@ import numpy as np
 
 from . import __version__
 from .analysis import (
+    AUTO_HARD_MAX,
     BRIGHT_TAIL_RATIO,
     CAMERA_FAST_MAX,
     MAX_SPEED,
@@ -207,6 +208,15 @@ def plan(
     if target == "auto":
         target = auto_target(runs, max_action)
     target = cast("float | None", target)
+    # Keep a finished TikTok under ~2 min. Camera footage caps its fast
+    # tiers at CAMERA_FAST_MAX because a phone-filmed desk blurs past ~4x —
+    # but that cap can floor a long clip well over the ceiling. When it
+    # would, let the IDLE (dead/lag) stretches fast-forward up to MAX_SPEED:
+    # blurring the waiting is fine, and action still never leaves 1.0x.
+    if target and not screen and max_fast < MAX_SPEED:
+        _, est_capped = assign_speeds(runs, target, max_action, max_fast)
+        if est_capped > AUTO_HARD_MAX:
+            max_fast = MAX_SPEED
 
     hook_win = pick_hook(scores, dur_eff) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
