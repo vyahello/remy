@@ -99,11 +99,13 @@ def test_validate_style():
 
 
 def test_apply_style_change():
+    # "yellow" is a non-default style, so switching to it is a real change
+    # (the default is now the dark-glass "black" style)
     s = _session()
-    changes = apply_updates(s, {"style": "black"})
-    assert s.params.style == "black"
-    assert changes == ["caption style → black"]
-    assert "style=black" in s.summary()
+    changes = apply_updates(s, {"style": "yellow"})
+    assert s.params.style == "yellow"
+    assert changes == ["caption style → yellow"]
+    assert "style=yellow" in s.summary()
 
 
 # ------------------------------------------------------------- cleanup

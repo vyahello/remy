@@ -36,7 +36,10 @@ STYLES: dict[str, Style] = {
     "black": {"text": (255, 255, 255, 255), "fill": (16, 16, 20, 224),
               "accent": (255, 255, 255, 60), "stroke": (0, 0, 0, 150)},
 }
-DEFAULT_STYLE = "purple"
+# "black" (white text on translucent dark glass) is the house default: it
+# reads premium/professional and blends into dark screen-recording footage.
+# "purple"/"yellow" stay pickable via --style or a bot redo.
+DEFAULT_STYLE = "black"
 
 # TikTok OCRs on-screen text; these terms commonly trigger moderation or
 # reduced reach. Keep captions descriptive rather than sensational. The
