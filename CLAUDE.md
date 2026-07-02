@@ -46,7 +46,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
    tiers on constantly-updating screen recordings).
 4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
    `content_crop`) — hard-trim boring lead-ins/outros (open and close on
-   action); optionally prepend a ~1.3s cold-open hook of the strongest
+   action); optionally prepend a ~2.2s cold-open hook of the strongest
    beat (biased late, where the payoff lives; opt-in via `--hook`, off by
    default — the bot defaults it off too); auto-zoom into
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).

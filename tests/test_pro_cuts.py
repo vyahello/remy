@@ -99,7 +99,7 @@ def test_pick_hook_finds_peak():
     assert win is not None
     start, end = win
     assert start <= 30.0 <= end
-    assert end - start == pytest.approx(1.3)
+    assert end - start == pytest.approx(2.2)
 
 
 def test_pick_hook_skips_opening_seconds():
@@ -109,7 +109,7 @@ def test_pick_hook_skips_opening_seconds():
     scores[40 * fps] = 50.0    # later, lower peak should win
     win = A.pick_hook(scores, 60.0)
     assert win is not None
-    assert win[0] >= 4.0 - 1.3
+    assert win[0] >= 4.0 - 2.2
 
 
 def test_pick_hook_short_video_none():

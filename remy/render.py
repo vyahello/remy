@@ -31,7 +31,7 @@ LOUDNORM = "loudnorm=I=-14:TP=-1.5:LRA=11"
 # it reads against busy footage. Timed in *output* seconds, so in the
 # single-pass graph it rides the concatenated stream and in the two-pass
 # graph it is applied only to the first segment.
-HOOK_CARD_DUR = 1.6      # seconds the card is on screen
+HOOK_CARD_DUR = 2.5      # seconds on screen (teaser + ~0.3s linger)
 HOOK_CARD_FADE = 0.3     # alpha fade-in / fade-out (also the scale ramp)
 HOOK_CARD_DIM = 0.35     # darkness of the legibility backing box
 HOOK_CARD_SCALE0 = 0.92  # card scale at t=0, ramping to 1.0 over the fade-in
