@@ -47,9 +47,10 @@ edited clip ready to post (see `docs/IDEAS.md`).
 4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
    `content_crop`) — hard-trim boring lead-ins/outros (open and close on
    action); optionally prepend a **~3s cold-open hook** of the strongest
-   beat (biased late, where the payoff lives; opt-in via `--hook`, off by
-   default — the bot defaults it off too). When the judge found the
-   payoff (`detect_payoff`), the teaser is picked **inside that span**
+   beat (biased late, where the payoff lives; CLI opt-in via `--hook`,
+   but the **bot defaults it ON** — 🪝 toggles it off). When the judge
+   found the payoff (`detect_payoff`), the teaser is picked **inside that
+   span**
    (`pick_hook(within=…)`) so the cold open shows the actual result, and
    the **hook card** (an animated text pill saying what's coming, worded
    by the judge's payoff line) bakes automatically whenever the hook is

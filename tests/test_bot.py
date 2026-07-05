@@ -228,7 +228,7 @@ def test_setup_keyboard_vertical_has_caption_choices_and_render():
     assert app.OWNCAP in datas and app.NOCAP in datas
     assert app.OPT + "hook" in datas and app.RENDER in datas
     labels = [b.text for row in kb.inline_keyboard for b in row]
-    assert any("Cold open: off" in t for t in labels)  # default off, in words
+    assert any("Cold open: ON ✅" in t for t in labels)  # default on, in words
     # exactly one caption choice is marked active; default = No caption
     assert any(t == "✅ No caption" for t in labels)
     # audio is parked by default → no music controls in the picker
@@ -275,7 +275,7 @@ def test_setup_text_reflects_state():
     app = _app()
     s = _setup_session(vertical=True)
     assert "caption: none" in app.setup_text(s)
-    assert "cold open off" in app.setup_text(s)
+    assert "cold open on" in app.setup_text(s)
     s.caption = "my cap"
     assert "my cap" in app.setup_text(s)
     assert "no baked caption" in app.setup_text(_setup_session(vertical=False))
@@ -296,9 +296,9 @@ def test_format_post_kit_empty_returns_blank():
     assert app.format_post_kit({"description": "", "hashtags": []}) == ""
 
 
-def test_session_defaults_to_setup_phase_hook_off():
+def test_session_defaults_to_setup_phase_hook_on():
     from remy.bot.session import EditParams, EditSession
-    assert EditParams().hook is False  # cold open opt-in
+    assert EditParams().hook is True  # 3s payoff teaser + card by default
     s = EditSession(source="x", file_name="x", caption="")
     assert s.phase == "setup" and s.vertical is True
     assert s.caption_choices == []
