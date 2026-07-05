@@ -28,6 +28,62 @@ def test_action_speedup_fits_ceiling_when_idle_alone_cannot():
     assert at_sped <= A.AUTO_HARD_MAX + 1       # now fits ~2 min
 
 
+def test_protect_spans_pins_demo_tier():
+    runs = [[0.0, 60.0, 2], [60.0, 100.0, 0]]
+    out = A.protect_spans(runs, [(50.0, 70.0)])
+    # the span is re-tiered PROTECTED across both original runs (merged)
+    assert [50.0, 70.0, A.PROTECTED_TIER] in out
+    assert out[0] == [0.0, 50.0, 2]
+    assert out[-1] == [70.0, 100.0, 0]
+    # timeline still contiguous
+    for a, b in zip(out, out[1:]):
+        assert a[1] == pytest.approx(b[0])
+
+
+def test_protect_spans_absorbs_slivers():
+    # span edges within min_piece of a run edge don't leave fragments
+    runs = [[0.0, 30.0, 2]]
+    out = A.protect_spans(runs, [(0.05, 29.98)])
+    assert out == [[0.0, 30.0, A.PROTECTED_TIER]]
+
+
+def test_protected_span_survives_aggressive_target():
+    # a brutal target speeds coding to its cap but the demo stays 1.0x
+    runs = [[0.0, 100.0, 2], [100.0, 120.0, A.PROTECTED_TIER]]
+    out, _ = A.assign_speeds(runs, 40.0, A.ACTION_HARD_MAX, A.MAX_SPEED)
+    by_tier = {tuple(r[:2]): sp for r, (_, _, sp) in zip(runs, out)}
+    assert by_tier[(100.0, 120.0)] == pytest.approx(1.0)
+    assert by_tier[(0.0, 100.0)] == pytest.approx(A.ACTION_HARD_MAX)
+
+
+def test_auto_target_floors_on_demo_plus_capped_action():
+    # 100s coding + 30s protected demo, long enough to trigger a solve:
+    # the target can't dip below demo (real time) + action at the cap
+    runs = [[0.0, 100.0, 2], [100.0, 130.0, A.PROTECTED_TIER],
+            [130.0, 200.0, 0]]
+    target = A.auto_target(runs, A.ACTION_FIT_MAX)
+    assert target is not None
+    assert target >= 30.0 + 100.0 / A.ACTION_FIT_MAX
+
+
+def test_shield_spans_keeps_cuts_out_of_the_demo():
+    cuts = [(10.0, 20.0), (28.0, 42.0), (60.0, 61.0)]
+    out = A.shield_spans(cuts, (30.0, 40.0))
+    assert (10.0, 20.0) in out          # untouched, outside the demo
+    assert (28.0, 30.0) in out          # trimmed back to the demo edge
+    assert (40.0, 42.0) in out          # tail piece past the demo
+    assert (60.0, 61.0) in out
+    # the invariant: nothing left overlaps the shielded demo
+    assert all(e <= 30.0 or s >= 40.0 for s, e in out)
+
+
+def test_trim_dead_ends_never_pops_protected_tail():
+    # a short low-motion tail would normally pop; protected = the demo
+    segs = [[0.0, 30.0, 2], [30.0, 33.0, A.PROTECTED_TIER]]
+    out = A.trim_dead_ends(segs)
+    assert out[-1] == [30.0, 33.0, A.PROTECTED_TIER]
+
+
 def test_caption_windows_maps_source_to_output_time():
     # 100s of source at 2x + 20s at 1x -> 50s + 20s = 70s output. Section
     # markers in SOURCE time land at their OUTPUT positions, laid end-to-end.

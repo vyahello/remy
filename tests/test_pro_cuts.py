@@ -99,7 +99,7 @@ def test_pick_hook_finds_peak():
     assert win is not None
     start, end = win
     assert start <= 30.0 <= end
-    assert end - start == pytest.approx(2.2)
+    assert end - start == pytest.approx(3.0)
 
 
 def test_pick_hook_skips_opening_seconds():
@@ -109,11 +109,36 @@ def test_pick_hook_skips_opening_seconds():
     scores[40 * fps] = 50.0    # later, lower peak should win
     win = A.pick_hook(scores, 60.0)
     assert win is not None
-    assert win[0] >= 4.0 - 2.2
+    assert win[0] >= 4.0 - 3.0
 
 
 def test_pick_hook_short_video_none():
     assert A.pick_hook(np.ones(12), 2.0) is None
+
+
+def test_pick_hook_within_span_prefers_the_demo():
+    # global peak at t=10 would win a free search; with the judge's demo
+    # span the teaser must come from inside it (the smaller peak at t=45)
+    fps = A.SAMPLE_FPS
+    scores = np.zeros(60 * fps)
+    scores[10 * fps] = 100.0
+    scores[45 * fps] = 40.0
+    free = A.pick_hook(scores, 60.0)
+    pinned = A.pick_hook(scores, 60.0, within=(40.0, 50.0))
+    assert free is not None and free[0] <= 10.0 <= free[1]
+    assert pinned is not None and pinned[0] <= 45.0 <= pinned[1]
+
+
+def test_pick_hook_within_short_span_pads_out():
+    # a demo span shorter than the teaser still yields a full-length hook
+    # centered on its peak
+    fps = A.SAMPLE_FPS
+    scores = np.zeros(60 * fps)
+    scores[30 * fps] = 10.0
+    win = A.pick_hook(scores, 60.0, within=(29.5, 30.5))
+    assert win is not None
+    assert win[1] - win[0] == pytest.approx(3.0)
+    assert win[0] <= 30.0 <= win[1]
 
 
 # ---------------------------------------------------------------- crop

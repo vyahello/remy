@@ -40,8 +40,15 @@ def claude_available() -> bool:
 
 def spread_times(duration: float, n: int = N_FRAMES,
                  margin: float = 0.05) -> list[float]:
-    """N timestamps spread evenly through the video, edges skipped."""
-    lo, hi = duration * margin, duration * (1 - margin)
+    """N timestamps spread evenly through the video, edges skipped.
+
+    The last timestamp always stays clear of the exact end of file: a
+    seek AT `duration` lands past the final decodable frame and the
+    extraction produces nothing (killing the whole judge pass), so even
+    margin=0.0 sampling ends ~0.75s before EOF.
+    """
+    lo = duration * margin
+    hi = min(duration * (1 - margin), max(0.0, duration - 0.75))
     if n == 1 or hi <= lo:
         return [duration / 2]
     step = (hi - lo) / (n - 1)
@@ -50,15 +57,29 @@ def spread_times(duration: float, n: int = N_FRAMES,
 
 def extract_frames(video: str, times: list[float], outdir: str,
                    width: int = FRAME_WIDTH) -> list[str]:
-    """Decode one frame per timestamp as a small JPEG; returns paths."""
+    """Decode one frame per timestamp as a small JPEG; returns paths.
+
+    Best-effort per frame: a timestamp that decodes nothing (a seek into
+    the final GOP, a glitchy stretch of the source) is skipped instead of
+    sinking the whole judge pass — the filenames carry the real
+    timestamps, so a gap stays truthful. Raises ValueError only when no
+    frame at all could be read.
+    """
     paths = []
     for i, t in enumerate(times):
         out = os.path.join(outdir, f"frame_{i:02d}_t{t:.1f}s.jpg")
-        subprocess.run(
+        res = subprocess.run(
             ["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", video,
              "-frames:v", "1", "-vf", f"scale={width}:-2", "-y", out],
-            check=True)
-        paths.append(out)
+            capture_output=True, text=True)
+        if (res.returncode == 0 and os.path.exists(out)
+                and os.path.getsize(out) > 0):
+            paths.append(out)
+        else:
+            log.warning("frame extract failed at %.1fs (skipped): %s",
+                        t, res.stderr.strip()[-200:])
+    if not paths:
+        raise ValueError("could not extract any frames from the video")
     return paths
 
 
@@ -172,6 +193,10 @@ Hard rules for the caption:
   hashtags, no surrounding quotes
 - SPECIFIC and useful beats clever or hyped — name the thing, promise the
   payoff; never "check this out", "so satisfying", "game changer"
+- EXACT and true to the footage: read tool / command / device names
+  character-for-character off the screen (btop, sd, M5StickC); if a name
+  isn't clearly readable, say what visibly happens instead of guessing.
+  Never promise a result the frames don't show
 - no sensational or policy-risky wording (hack/hacking, attack, exploit,
   deauth, crack, bypass, spy, payload, steal, free wifi)
 - one or two RELEVANT emoji that match the topic (e.g. 💻 🖥️ ⚡ 📊 🔥 🐧
@@ -273,9 +298,14 @@ Then produce two things:
      displays CPU, memory, disks, network and processes and has a menu."
    - ONE idea only. Pick the single best takeaway; don't list every
      feature, theme or keybind. Specific beats exhaustive.
-   - Real names from the frames, never invented. No vague hype ("check
-     this out", "so cool", "game changer", "mind blown") and no fake
-     urgency — it's a confident tip, not clickbait.
+   - Real names from the frames, never invented — read them character-
+     for-character off the on-screen text (one misread name or wrong flag
+     kills credibility; if something isn't clearly readable, teach the
+     visible outcome instead of guessing the detail). No vague hype
+     ("check this out", "so cool", "game changer", "mind blown") and no
+     fake urgency — it's a confident tip, not clickbait.
+   - EDUCATIONAL and straightforward: after reading it, the viewer knows
+     exactly what they'd learn and what they could go do with it.
    - DO NOT paste a raw command, flag string or code snippet into the
      caption ("Try: echo ... | sd ...", "Run: btop -x"). It reads like
      documentation, breaks on TikTok's plain-text box, and the viewer is
@@ -586,6 +616,9 @@ write ONE short caption plus the SOURCE-second where that step begins:
 - read the on-screen UI / code to name what actually happens ("Require the
   display", "Draw Hello World", "Push it to the device", "Runs on
   hardware") — never invent a step you can't see in the frames;
+- each label must be PRECISELY true of its moment — a viewer glancing in
+  mid-video should know exactly what is happening right then; name
+  commands / files / UI as written on screen, never approximately;
 - each label ≤ {max_chars} characters, plain text, a crisp tips/tutorial
   voice, no hashtags / quotes / markdown;
 - one or two relevant emoji only if they fit; never sensational or
@@ -662,6 +695,103 @@ def detect_sections(
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return clean_sections(reply, duration)
+
+
+PAYOFF_PROMPT = CREATOR_CONTEXT + """
+You are a TikTok editor finding the PAYOFF of a build / coding video —
+the span where the built thing actually RUNS: the script executes and
+prints its result, the device screen comes alive and does the thing, the
+app shows the finished behaviour. Each frame is labelled with its
+timestamp in seconds (the t…s in the filename).
+
+Frames sampled in order from the {duration:.0f}s source:
+{frames}
+
+Report two things:
+
+1. The DEMO span, in SOURCE seconds. The edit keeps this span at real
+   speed (everything else may fast-forward) AND its strongest beat opens
+   the video as the cold-open teaser, so precision matters:
+   - start: the moment the payoff begins (the run command fires, the
+     device starts doing the thing) — not the typing that led up to it;
+   - end: the last frame still showing the result.
+   Pick the single clearest payoff; if the result appears several times,
+   prefer the LAST, most complete demonstration. If no frame shows a
+   distinct payoff, return 0 for both.
+2. line — the cold-open card text shown over the teaser (max {max_chars}
+   characters): tell the scroller literally what they are about to
+   watch, in plain educational language. Read names character-for-
+   character off the screen (never invent or embellish); no hype, no
+   clickbait, no markdown / hashtags / quotes; at most one fitting
+   emoji. Never sensational or policy-risky words (hack, attack,
+   exploit, deauth, crack, bypass, spy, payload, steal, free wifi).
+   The register: "JavaScript on a real gadget", "One command finds
+   every duplicate".
+
+Reply with ONLY a JSON object, no other text:
+{{"start": <seconds>, "end": <seconds>, "line": "<card text>",
+ "reason": "<short>"}}
+"""
+
+PAYOFF_MIN_SPAN = 1.0    # a thinner span than this can't be trusted
+PAYOFF_MAX_SPAN = 40.0   # a longer "payoff" keeps its climax (the tail)
+PAYOFF_MAX_FRAMES = 16
+
+
+def clean_payoff(
+    reply: dict, duration: float
+) -> tuple[tuple[float, float] | None, str]:
+    """Turn Claude's {start,end,line} into a safe demo span + card line.
+
+    Clamps the span into the clip and rejects (None) a missing or
+    implausible one; a very long span keeps its FINAL stretch — the
+    climax of a demo lives at its end. The line must pass the on-video
+    caption rules (length + moderation) or it is dropped independently
+    of the span, so a good span with a bad line still protects the demo.
+    """
+    line = reply.get("line", "")
+    line = line.strip().strip('"') if isinstance(line, str) else ""
+    if len(line) > MAX_CAPTION_CHARS or check_caption(line):
+        line = ""
+    try:
+        start = float(reply.get("start", 0) or 0)
+        end = float(reply.get("end", 0) or 0)
+    except (TypeError, ValueError):
+        return None, line
+    start = max(0.0, min(start, duration))
+    end = max(0.0, min(end, duration))
+    if end - start < PAYOFF_MIN_SPAN:
+        return None, line
+    cap = min(PAYOFF_MAX_SPAN, duration * 0.5)
+    if end - start > cap:
+        start = end - cap
+    return (round(start, 2), round(end, 2)), line
+
+
+def detect_payoff(
+    video: str, duration: float
+) -> tuple[tuple[float, float] | None, str]:
+    """Find the demo/payoff span and a cold-open card line.
+
+    The span is pinned to real time by the edit (`analysis.protect_spans`)
+    and seeds the cold-open teaser (`analysis.pick_hook` `within=`); the
+    line rides the hook card so the viewer knows what they're watching.
+    Best-effort: (None, "") when no clear payoff is found. Raises
+    JudgeUnavailable / ValueError on a hard failure (callers treat the
+    pass as best-effort).
+    """
+    n = min(PAYOFF_MAX_FRAMES, max(N_FRAMES, round(duration / 12)))
+    tmp = tempfile.mkdtemp(prefix="remy_payoff_")
+    try:
+        frames = extract_frames(
+            video, spread_times(duration, n=n, margin=0.0), tmp)
+        prompt = PAYOFF_PROMPT.format(
+            frames="\n".join(frames), duration=duration,
+            max_chars=MAX_CAPTION_CHARS)
+        reply = parse_json_obj(run_claude(prompt))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return clean_payoff(reply, duration)
 
 
 MAX_HASHTAGS = 5  # TikTok ranks only the leading few — keep it tight

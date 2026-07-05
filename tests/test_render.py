@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from remy import render as R
 
@@ -311,6 +312,56 @@ def test_dry_run_prints_hook_card_and_renders_nothing(monkeypatch):
              on_progress=lines.append)
     assert any('hook card: "My caption"' in ln for ln in lines)
     assert called["render"] is False
+
+
+def _fake_plan_with_hook(src):
+    return lambda *a, **k: (src, [(0, 3.0, 1.0), (3.0, 10, 2.0)], 10.0,
+                            np.zeros((3, 4, 4)), (0.0, 3.0))
+
+
+def test_hook_implies_card_and_uses_payoff_line(monkeypatch):
+    # the cold open bakes the card by default, worded by the judge line
+    from remy import cli
+    src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
+           "duration": 20.0, "transfer": ""}
+    monkeypatch.setattr(cli, "plan", _fake_plan_with_hook(src))
+    lines: list[str] = []
+    cli.edit("in.mp4", "My caption", hook=True, hook_line="JS on a gadget",
+             dry_run=True, on_progress=lines.append)
+    assert any('hook card: "JS on a gadget"' in ln for ln in lines)
+    # without a judge line the card falls back to the caption
+    lines.clear()
+    cli.edit("in.mp4", "My caption", hook=True, dry_run=True,
+             on_progress=lines.append)
+    assert any('hook card: "My caption"' in ln for ln in lines)
+    # explicit off wins over the hook default
+    lines.clear()
+    cli.edit("in.mp4", "My caption", hook=True, hook_card=False,
+             dry_run=True, on_progress=lines.append)
+    assert not any("hook card:" in ln for ln in lines)
+
+
+def test_plan_protects_payoff_and_teases_it(monkeypatch):
+    # end-to-end plan(): the judge span plays 1.0x in the body and the
+    # cold-open teaser is picked from inside it
+    from remy import cli
+    from remy.analysis import SAMPLE_FPS
+    dur = 100.0
+    src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
+           "duration": dur, "transfer": ""}
+    n = int(dur * SAMPLE_FPS)
+    scores = np.ones(n)
+    scores[80 * SAMPLE_FPS:90 * SAMPLE_FPS] = 30.0  # the demo lights up
+    frames = np.full((n, 4, 4), 50, dtype=np.int16)
+    monkeypatch.setattr(cli, "probe", lambda p: src)
+    monkeypatch.setattr(cli, "motion_scores", lambda p, s: (scores, frames))
+    _src, segs, _est, _fr, hook_win = cli.plan(
+        "in.mp4", "auto", hook=True, payoff=(80.0, 90.0))
+    assert hook_win is not None
+    assert 77.0 <= hook_win[0] and hook_win[1] <= 91.0  # teased from the demo
+    body = segs[1:]
+    assert any(abs(s - 80.0) < 0.5 and abs(e - 90.0) < 0.5
+               and sp == pytest.approx(1.0) for s, e, sp in body)
 
 
 def test_filtergraph_vertical_no_caption():

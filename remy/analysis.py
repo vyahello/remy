@@ -13,12 +13,16 @@ ANALYZE_W = 120         # analysis frame width (tiny = fast)
 SMOOTH_SEC = 1.5        # smoothing window for motion scores
 MIN_SEG_SEC = 1.4       # shorter runs get merged into a neighbour
 PCT_LOW, PCT_HIGH = 45, 80   # adaptive tier thresholds (percentiles)
-# Pacing is deliberately gentle: this editor is built for live-coding and
-# terminal tutorials, where the viewer is reading along. The lag/dead
-# fast-forward is mild (real waiting is trimmed, not blurred past) so the
-# coding itself stays at a followable speed — action is never sped up.
+# Pacing: base tiers are gentle (real waiting is trimmed, not blurred
+# past). Under a length target the CODING/action tier may speed up too —
+# typing reads fine mildly accelerated — but the judge-detected DEMO span
+# (the payoff actually running) is pinned to strict real time via
+# PROTECTED_TIER so the viewer always sees the result at 1.0x.
 SPEED_DEAD, SPEED_LAG, SPEED_ACTION = 2.4, 1.3, 1.0
 MAX_SPEED = 6.0
+# Tier for judge-protected spans (the demo/payoff): always plays 1.0x —
+# the target solver may speed everything else, never this.
+PROTECTED_TIER = 3
 # Handheld camera footage (a phone filming a desk/device) smears into an
 # unwatchable blur past ~4x — fast-forwarding it should still read as the
 # same scene, just quicker. Screen recordings stay legible at MAX_SPEED
@@ -182,12 +186,7 @@ def cut_spans(
     """
     if not spans:
         return runs
-    norm: list[list[float]] = []
-    for a, b in sorted((min(a, b), max(a, b)) for a, b in spans):
-        if norm and a <= norm[-1][1]:
-            norm[-1][1] = max(norm[-1][1], b)
-        else:
-            norm.append([a, b])
+    norm = _merge_spans(spans)
     out: list[Segment] = []
     for s, e, t in runs:
         pieces = [(s, e)]
@@ -206,6 +205,86 @@ def cut_spans(
             if pe - ps >= min_piece:
                 out.append([ps, pe, t])
     return out
+
+
+def _merge_spans(spans: list[tuple[float, float]]) -> list[list[float]]:
+    """Sort + merge overlapping (a, b) spans, normalizing reversed pairs."""
+    norm: list[list[float]] = []
+    for a, b in sorted((min(a, b), max(a, b)) for a, b in spans):
+        if norm and a <= norm[-1][1]:
+            norm[-1][1] = max(norm[-1][1], b)
+        else:
+            norm.append([a, b])
+    return norm
+
+
+def protect_spans(
+    runs: list[Segment],
+    spans: list[tuple[float, float]],
+    min_piece: float = 0.12,
+) -> list[Segment]:
+    """Pin source-time spans (the demo/payoff) to PROTECTED_TIER.
+
+    The judge finds where the built thing actually RUNS — the demo the
+    viewer came for. Those spans must play at strict real time no matter
+    how hard the rest is compressed, so every run piece inside one is
+    re-tiered to PROTECTED_TIER (assign_speeds maps it to 1.0x and the
+    target solver never raises it). Runs are split at span edges; slivers
+    shorter than `min_piece` are absorbed into the protected piece so a
+    cut never leaves a single-frame fragment.
+    """
+    if not spans:
+        return runs
+    norm = _merge_spans(spans)
+    out: list[Segment] = []
+    for s, e, t in runs:
+        cur = s
+        for a, b in norm:
+            a2, b2 = max(cur, a), min(e, b)
+            if b2 <= a2:
+                continue
+            if a2 - cur >= min_piece:
+                out.append([cur, a2, t])
+            else:
+                a2 = cur  # sliver head — absorb into the protected piece
+            out.append([a2, b2, PROTECTED_TIER])
+            cur = b2
+        if e - cur >= min_piece:
+            out.append([cur, e, t])
+        elif out and e > cur:
+            out[-1][1] = e  # sliver tail — absorb
+    merged: list[Segment] = []
+    for seg in out:
+        if (merged and merged[-1][2] == seg[2]
+                and abs(merged[-1][1] - seg[0]) < 1e-9):
+            merged[-1][1] = seg[1]
+        else:
+            merged.append(seg)
+    return merged
+
+
+def shield_spans(
+    cuts: list[tuple[float, float]],
+    shield: tuple[float, float],
+    min_piece: float = 0.4,
+) -> list[tuple[float, float]]:
+    """Subtract a protected span from cut spans (mistake cuts).
+
+    The judge's mistake pass must never delete footage inside the
+    demo/payoff — an over-eager "cut" overlapping it is trimmed back to
+    the parts outside; pieces shorter than `min_piece` are dropped.
+    """
+    a, b = min(shield), max(shield)
+    out: list[tuple[float, float]] = []
+    for cs, ce in cuts:
+        if ce <= a or cs >= b:
+            out.append((cs, ce))
+            continue
+        if cs < a:
+            out.append((cs, a))
+        if ce > b:
+            out.append((b, ce))
+    return [(s, e) for s, e in out if e - s >= min_piece]
 
 
 def _src_to_out(segs: list[SpeedSegment], ts: float) -> float:
@@ -299,13 +378,15 @@ def trim_dead_ends(
         return (seg_brightness is not None
                 and seg_brightness(seg) > floor * BRIGHT_TAIL_RATIO)
 
-    if any(s[2] == 2 for s in segs):
-        while (len(segs) > 1 and segs[-1][2] != 2
+    if any(s[2] >= 2 for s in segs):
+        # tier ≥ 2 is content: action, or a judge-protected demo span —
+        # a protected tail is the payoff by definition and never pops
+        while (len(segs) > 1 and segs[-1][2] < 2
                and segs[-1][1] - segs[-1][0] <= 6.0):
             if is_payoff(segs[-1]):
                 break  # the on-screen result — keep it, don't end before it
             segs.pop()
-    if segs and segs[-1][2] != 2 and is_payoff(segs[-1]):
+    if segs and segs[-1][2] < 2 and is_payoff(segs[-1]):
         # readable, not a 3.2x flash: a held result plays at lag speed
         if segs[-1][2] == 0:
             segs[-1][2] = 1
@@ -317,9 +398,10 @@ def trim_dead_ends(
 def pick_hook(
     scores: np.ndarray,
     duration: float,
-    hook_sec: float = 2.2,
+    hook_sec: float = 3.0,
     skip_head: float = 4.0,
     sample_fps: int = SAMPLE_FPS,
+    within: tuple[float, float] | None = None,
 ) -> tuple[float, float] | None:
     """Find the cold-open moment: the strongest beat, biased late.
 
@@ -328,13 +410,24 @@ def pick_hook(
     usually lives near the end, so later peaks are weighted up; the
     opening seconds are skipped entirely (a hook from the existing
     opening adds nothing). None when the video is too short to bother.
+
+    `within` (when given) restricts the search to a source window — the
+    judge-detected demo/payoff span — so the teaser shows the strongest
+    beat of the actual RESULT instead of whatever moved most anywhere in
+    the clip. A window shorter than the teaser still works: the pick
+    centers on its peak and pads out around it.
     """
     if duration < skip_head + 2 * hook_sec:
         return None
     # progress ramp: a peak at the end weighs 2.5x one at the start
     weighted = scores * np.linspace(0.4, 1.0, len(scores))
-    lo = int(skip_head * sample_fps)
-    peak = lo + int(np.argmax(weighted[lo:]))
+    lo, hi = int(skip_head * sample_fps), len(scores)
+    if within is not None:
+        wlo = int(max(0.0, min(within)) * sample_fps)
+        whi = int(min(duration, max(within)) * sample_fps)
+        if whi > wlo:  # a degenerate window falls back to the full search
+            lo, hi = min(wlo, len(scores) - 1), min(max(whi, wlo + 1), hi)
+    peak = lo + int(np.argmax(weighted[lo:hi]))
     t_peak = peak / sample_fps
     start = min(max(0.0, t_peak - hook_sec / 2), duration - hook_sec)
     return start, start + hook_sec
@@ -600,29 +693,36 @@ def assign_speeds(
 ) -> tuple[list[SpeedSegment], float]:
     """Map tiers to speeds; optionally solve for a target duration.
 
-    `max_action_speed` lets the action tier rise above real-time when
-    the fast tiers alone can't reach the target — screen-recording
-    content (typing, scrolling output) stays perfectly followable at a
-    mild speed-up, unlike camera footage, which keeps 1.0x.
+    `max_action_speed` lets the action tier (the coding/typing) rise above
+    real time when the fast tiers alone can't reach the target — typing
+    and scrolling output stay perfectly followable at a mild speed-up.
     `max_fast_speed` caps the dead/lag tiers: screen content survives the
     full MAX_SPEED, but handheld camera footage is held to CAMERA_FAST_MAX
-    so a fast-forward stays watchable instead of smearing.
+    so a fast-forward stays watchable instead of smearing. PROTECTED_TIER
+    runs (the judge-found demo/payoff) always play strict 1.0x — the
+    solver compresses around them, never through them.
     Returns ([(start, end, speed)], estimated_output_duration).
     """
-    speeds = {0: SPEED_DEAD, 1: SPEED_LAG, 2: SPEED_ACTION}
+    speeds = {0: SPEED_DEAD, 1: SPEED_LAG, 2: SPEED_ACTION,
+              PROTECTED_TIER: 1.0}
 
     def out_dur(sp: dict[int, float]) -> float:
         return sum((e - s) / sp[int(t)] for s, e, t in segs)
 
     if target:
-        # binary-search a multiplier applied to the dead/lag speeds
-        lo_m, hi_m = 0.4, 3.0
+        # binary-search a multiplier applied to the dead/lag speeds. The
+        # upper bound must let EVERY tier reach its cap (lag starts at
+        # 1.3x, so 3.0 alone would stall it at 3.9x and leave a reachable
+        # target unmet) — the per-tier caps do the real limiting.
+        lo_m = 0.4
+        hi_m = max(3.0, max_fast_speed / SPEED_LAG, max_action_speed)
         for _ in range(40):
             m = (lo_m + hi_m) / 2
             sp = {0: min(max_fast_speed, max(1.0, SPEED_DEAD * m)),
                   1: min(max_fast_speed, max(1.0, SPEED_LAG * m)),
                   2: min(max_action_speed,
-                         max(1.0, SPEED_ACTION * m))}
+                         max(1.0, SPEED_ACTION * m)),
+                  PROTECTED_TIER: 1.0}
             if out_dur(sp) > target:
                 lo_m = m
             else:
@@ -671,16 +771,18 @@ def edit_window(
 # ~30s blurs the very thing the viewer came to follow. So natural pacing
 # is left alone up to a roomier ceiling, and when a clip really must be
 # compressed it aims for a longer, still-followable length (never below
-# the real-time action).
+# the real-time demo plus the coding at its cap).
 AUTO_SWEET = 45.0  # output length to aim for when compressing
 AUTO_MAX = 55.0    # natural pacing up to this long is left alone
 AUTO_HARD_MAX = 120.0  # ceiling: a finished TikTok should stay under ~2 min
-# Last resort for a long, action-dense clip: when even MAX_SPEED idle
-# fast-forward can't fit the ceiling, the coding itself may speed up this
-# far. Still followable (you read along a little quicker), never a blur.
+# Standard cap for the coding/action tier in the target solve (silent
+# exports only — atempo'd speech sounds wrong): typing reads fine here,
+# the video feels quick, and the protected demo still plays 1.0x.
 ACTION_FIT_MAX = 1.8
-# screen-recording action (typing, scrolling output) stays followable
-# at a mild speed-up; camera action keeps strict real time
+# Last resort past the 2-min ceiling: the coding may speed up this far,
+# aiming AT the ceiling so it's accelerated as little as needed.
+ACTION_HARD_MAX = 2.5
+# legacy alias for callers that tuned screen action separately
 SCREEN_ACTION_MAX = 1.5
 
 
@@ -690,15 +792,15 @@ def auto_target(runs: list[Segment],
 
     If the natural pacing (base tier speeds) already lands within
     AUTO_MAX, no solving is needed. Otherwise compress toward AUTO_SWEET
-    — floored by the action time at `max_action_speed` (1.0 for camera
-    footage: real action is never sped up; SCREEN_ACTION_MAX for screen
-    recordings, where a mild speed-up stays followable).
+    — floored by the protected demo time (always real time) plus the
+    action/coding time at `max_action_speed`.
     """
     _, natural = assign_speeds(runs)
     if natural <= AUTO_MAX:
         return None
     action = sum(e - s for s, e, t in runs if int(t) == 2)
-    return max(AUTO_SWEET, action * 1.05 / max_action_speed)
+    demo = sum(e - s for s, e, t in runs if int(t) == PROTECTED_TIER)
+    return max(AUTO_SWEET, demo + action * 1.05 / max_action_speed)
 
 
 MIN_SEG_SRC = 0.3  # never align a segment below this many source-seconds

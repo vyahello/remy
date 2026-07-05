@@ -30,6 +30,7 @@ from ..judge import (
     claude_available,
     detect_content_window,
     detect_mistakes,
+    detect_payoff,
     interpret_feedback,
     suggest_caption,
     suggest_captions,
@@ -463,6 +464,8 @@ async def _render_and_deliver(msg, context: ContextTypes.DEFAULT_TYPE,
                 trim_start=p.trim_start,
                 trim_end=p.trim_end,
                 cut_spans_src=p.mistake_cuts or None,
+                payoff_span=session.payoff,
+                hook_line=session.hook_line,
                 crop_enabled=p.crop,
                 zoom=p.zoom,
                 look_enabled=p.look,
@@ -596,6 +599,8 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     subject = ""
     auto_trim = (0.0, 0.0)
     mistake_cuts: list[tuple[float, float]] = []
+    payoff: tuple[float, float] | None = None
+    hook_line = ""
     if cfg.claude_judge and claude_available():
         await status.edit_text("👀 Claude is watching your clip…")
         dur = src["duration"]
@@ -628,13 +633,24 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 log.warning("mistake detection failed: %s", exc)
                 return []
 
+        async def _payoff() -> tuple[tuple[float, float] | None, str]:
+            # the demo span plays at strict 1.0x however hard the rest is
+            # compressed; its strongest beat seeds the cold-open teaser
+            try:
+                return await asyncio.to_thread(detect_payoff, dest, dur)
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.warning("payoff detection failed: %s", exc)
+                return None, ""
+
         # run the Claude calls at once so detection adds no wall-clock time
-        (ideas, subject), auto_trim, mistake_cuts = await asyncio.gather(
-            _captions(), _window(), _mistakes())
+        ((ideas, subject), auto_trim, mistake_cuts,
+         (payoff, hook_line)) = await asyncio.gather(
+            _captions(), _window(), _mistakes(), _payoff())
 
     session = EditSession(source=dest, file_name=file_name, caption="",
                           subject=subject, vertical=vertical,
-                          caption_choices=ideas)
+                          caption_choices=ideas, payoff=payoff,
+                          hook_line=hook_line)
     session.params.target = cfg.default_target
     session.params.trim_start, session.params.trim_end = auto_trim
     session.params.mistake_cuts = mistake_cuts
@@ -645,6 +661,8 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if auto_trim != (0.0, 0.0):
         log.info("auto content window: trim -%.1fs/-%.1fs",
                  *auto_trim)
+    if payoff:
+        log.info("payoff span: %.1f-%.1fs, line=%r", *payoff, hook_line)
     # a caption typed with the upload pre-selects it (vertical only)
     upload_caption = (msg.caption or "").strip()
     if vertical and upload_caption and not check_caption(upload_caption):
@@ -656,6 +674,9 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         saw += (f"✂️ trimming {len(mistake_cuts)} fumble"
                 f"{'s' if len(mistake_cuts) > 1 else ''} "
                 "(mistyped commands / errors)\n")
+    if payoff:
+        saw += (f"🎯 demo at {payoff[0]:.0f}–{payoff[1]:.0f}s stays "
+                "real-time — 🪝 cold open teases it\n")
     await status.edit_text((saw + "Set it up below 👇").strip())
     if not vertical and ideas:
         # landscape bakes no caption — offer the ideas as tap-to-copy text

@@ -17,6 +17,14 @@ def test_spread_times_single():
     assert J.spread_times(10.0, n=1) == [5.0]
 
 
+def test_spread_times_zero_margin_stays_clear_of_eof():
+    # a seek AT duration decodes nothing — even margin=0 must end early
+    times = J.spread_times(416.87, n=16, margin=0.0)
+    assert times[0] == pytest.approx(0.0)
+    assert times[-1] <= 416.87 - 0.7
+    assert times == sorted(times)
+
+
 def test_parse_json_obj_plain():
     assert J.parse_json_obj('{"a": 1}') == {"a": 1}
 
@@ -237,3 +245,38 @@ def test_clean_sections_handles_garbage():
     assert J.clean_sections({}, 60.0) == []
     assert J.clean_sections({"sections": "nope"}, 60.0) == []
     assert J.clean_sections({"sections": [1, "x", {}]}, 60.0) == []
+
+
+def test_clean_payoff_clamps_and_keeps_line():
+    span, line = J.clean_payoff(
+        {"start": 90, "end": 999, "line": "JS on a real gadget ⚡"}, 120.0)
+    assert span == (90.0, 120.0)          # end clamped into the clip
+    assert line == "JS on a real gadget ⚡"
+
+
+def test_clean_payoff_rejects_thin_or_missing_span():
+    span, line = J.clean_payoff({"start": 0, "end": 0, "line": "ok"}, 60.0)
+    assert span is None and line == "ok"  # a good line survives a bad span
+    span, _ = J.clean_payoff({"start": 30, "end": 30.4}, 60.0)
+    assert span is None
+    span, line = J.clean_payoff({"start": "x", "end": []}, 60.0)
+    assert span is None and line == ""
+
+
+def test_clean_payoff_long_span_keeps_the_climax():
+    # a "payoff" covering most of the clip keeps only its final stretch
+    span, _ = J.clean_payoff({"start": 0, "end": 100}, 120.0)
+    assert span is not None
+    start, end = span
+    assert end == 100.0
+    assert end - start <= min(J.PAYOFF_MAX_SPAN, 60.0) + 1e-6
+
+
+def test_clean_payoff_drops_risky_or_overlong_line():
+    span, line = J.clean_payoff(
+        {"start": 10, "end": 20, "line": "how to hack wifi"}, 60.0)
+    assert span == (10.0, 20.0)           # span still protects the demo
+    assert line == ""
+    _, line = J.clean_payoff(
+        {"start": 10, "end": 20, "line": "x" * 80}, 60.0)
+    assert line == ""

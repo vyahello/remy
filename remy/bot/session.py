@@ -65,6 +65,10 @@ class EditSession:
     vertical: bool = True  # vertical clips can bake a caption; landscape can't
     phase: str = "setup"   # "setup" (pre-render picker) → "review" (redo loop)
     caption_choices: list[str] = field(default_factory=list)  # Claude's ideas
+    # judge.detect_payoff at upload: the demo span (source seconds) is
+    # pinned to 1.0x + seeds the cold-open teaser; the line rides the card
+    payoff: tuple[float, float] | None = None
+    hook_line: str = ""
     params: EditParams = field(default_factory=EditParams)
     revision: int = 0
     history: list[str] = field(default_factory=list)

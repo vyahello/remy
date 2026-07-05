@@ -18,16 +18,17 @@ Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 |------|---------|---------|
 | `-c / --caption` | — | Persistent caption (optional). Emoji supported (⚡🔥🧪💻…). Auto-balanced onto two lines. Omit it for a clean vertical export with no baked caption. **Landscape sources never get a caption** — see below. |
 | `-o / --output` | `<input>_remy.mp4` | Output path. |
-| `--target` | `auto` | Output length. `auto` (default) solves a TikTok-friendly length: natural pacing ≤35s is kept, longer compresses toward the ~30s completion-rate sweet spot — floored by the real-time action, which is never sped up. A number solves for ≈ N seconds; `none` keeps base tier speeds (dead 3.2x, lag 1.7x, action 1x). |
-| `--style` | `purple` | Caption look: `purple` (purple bold-italic on white — the house style), `yellow` (black on yellow), `black` (white on black). |
+| `--target` | `auto` | Output length. `auto` (default) solves a TikTok-friendly length: natural pacing ≤55s is kept, longer compresses toward a ~45s sweet spot and is capped at ~2 min — the coding may speed up mildly (≤1.8x, 2.5x only past the cap; silent exports only), while the judge-detected demo span always plays real time. A number solves for ≈ N seconds; `none` keeps base tier speeds (dead 2.4x, lag 1.3x, action 1x). |
+| `--style` | `black` | Caption look: `black` (white on translucent dark glass — the house default), `purple` (purple on white), `yellow` (black on yellow). |
 | `--caption-pos` | `auto` | `auto` builds a saliency map (motion + detail + brightness over the whole video) and places the caption over the calmest region across the **whole** TikTok safe zone — a mild top bias only breaks ties, so a calm frame rides high on the black bar while a bright/busy top (e.g. a laptop screen) pushes the caption down onto the still region below (a dark keyboard, a hand), never over the content. `top` pins it just below the top UI bar; `bottom` uses a letterboxed band below the video (legacy style — risks TikTok UI overlap). |
-| `--hook` / `--no-hook` | off | Cold-open: prepend ~2.2s of the video's strongest beat (biased toward late peaks, where the payoff lives) before the chronological cut. Opt-in — add `--hook` to enable. |
+| `--hook` / `--no-hook` | off | Cold-open: prepend a ~3s teaser of the video's strongest beat (biased toward late peaks; with `--detect-payoff`, picked from inside the actual demo) before the chronological cut, with the hook card on top saying what's coming. Opt-in — add `--hook` to enable. |
+| `--detect-payoff` | off | Have Claude find the demo/payoff span: it plays at strict 1.0x however hard the rest compresses, the cold open teases it, and its line words the hook card (needs the `claude` CLI; best-effort). The bot runs this automatically at upload. |
 | `--crop` / `--no-crop` | on | Auto-zoom into the motion-energy bounding box, dropping static margins (desktop wallpaper, window chrome). Only crops when it gains ≥10% — otherwise leaves the frame alone. |
 | `--zoom F` | 1.0 | Framing dial on top of the auto-zoom: `1.2` punches in tighter around the same center, `0.8` pulls wider. Works even with `--no-crop` (a deliberate centered punch-in). |
 | `--trim-start SEC` | 0 | Hard-cut this many seconds off the source **head** — a recorder-UI intro (OBS/screen-capture window), a long fumble before the action. Stacks on the automatic edge-trim (whichever removes more wins). |
 | `--trim-end SEC` | 0 | Hard-cut this many seconds off the source **tail** — a redundant outro (exiting the app, the stop-recording shuffle). Stacks on the automatic edge-trim. |
-| `--hook-card` / `--no-hook-card` | off | Animated text card over the opening 1.6s (vertical only). See [Hook card](#hook-card). |
-| `--hook-card-text` | caption | Override the hook card text (defaults to the caption). |
+| `--hook-card` / `--no-hook-card` | follows `--hook` | Animated text card over the opening ~3.3s (vertical only). On by default whenever the hook is on; `--no-hook-card` opts out. See [Hook card](#hook-card). |
+| `--hook-card-text` | payoff line / caption | Override the hook card text (defaults to the detected payoff line, else the caption). |
 | `--hook-card-pushin` / `--no-hook-card-pushin` | off | Also ease the footage in under the card while it's visible. |
 | `--keep-audio` | off | Keep the original ambient audio. **By default the export is muted** (no audio track) so you add a TikTok sound in-app. |
 | `--music [FILE]` | off | Bake in music (implies sound). Bare flag synthesizes a royalty-free track; pass a path to use your own audio. For off-platform posts. |
@@ -39,10 +40,11 @@ Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 
 ## Hook card
 
-`--hook-card` bakes an **animated text card over the opening 1.6s** — the
-single most-watched moment — to give scrollers an explicit reason to stay.
-It's a faceless-content retention lever: a bold, motion-rendered promise in
-the first frames, not just raw footage.
+The hook card is an **animated text card over the opening ~3.3s** — the
+single most-watched moment — that tells scrollers exactly what they're
+about to watch. It bakes automatically whenever `--hook` is on (the cold
+open without words is just unexplained footage); `--no-hook-card` opts
+out, and `--hook-card` forces it on without a hook.
 
 ```bash
 # reuse the caption text as the card
@@ -56,9 +58,11 @@ How it behaves:
 
 - **Vertical only.** Landscape exports carry no baked text (you overlay your
   own), so the card is silently skipped there.
-- **Text** defaults to the caption; `--hook-card-text` overrides it. It's
-  rendered with the same styled boxes + color emoji as the caption (just
-  bigger), and auto-shrinks the font if a long line would overflow.
+- **Text** defaults to the judge's payoff line (`--detect-payoff` / the
+  bot's automatic pass), else the caption; `--hook-card-text` overrides
+  both. It's rendered with the same styled boxes + color emoji as the
+  caption (just bigger), and auto-shrinks the font if a long line would
+  overflow.
 - **Motion:** fades in over 0.3s with a subtle 0.92→1.0 scale ramp, holds,
   then fades out — on a dimmed backing box so it reads against busy footage.
 - **One text block at a time:** the persistent caption is held back until the
@@ -68,7 +72,8 @@ How it behaves:
 - `--hook-card-pushin` additionally eases the footage in (a gentle settle)
   under the card; off by default.
 
-It's **off by default** — add `--hook-card` when you want it.
+It **follows `--hook`** — on with the cold open, `--no-hook-card` to opt
+out, `--hook-card` to force it without one.
 
 ## Landscape sources (laptop screen recordings)
 

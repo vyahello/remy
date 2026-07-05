@@ -13,6 +13,7 @@ import numpy as np
 from . import __version__
 from .analysis import (
     ACTION_FIT_MAX,
+    ACTION_HARD_MAX,
     AUTO_HARD_MAX,
     BRIGHT_TAIL_RATIO,
     CAMERA_FAST_MAX,
@@ -29,7 +30,9 @@ from .analysis import (
     motion_scores,
     pick_hook,
     probe,
+    protect_spans,
     saliency_map,
+    shield_spans,
     smooth,
     to_segments,
     trim_dead_ends,
@@ -90,20 +93,23 @@ def build_parser() -> argparse.ArgumentParser:
                          "labels (needs the claude CLI to label the steps)")
     ap.add_argument("--hook", action=argparse.BooleanOptionalAction,
                     default=False,
-                    help="Cold-open on the most action-packed beat of the "
-                         "video before the chronological cut (default off)")
+                    help="Cold-open: a ~3s teaser of the video's strongest "
+                         "beat before the chronological cut, with a text "
+                         "card saying what's coming (default off; pairs "
+                         "with --detect-payoff for a Claude-picked moment)")
     ap.add_argument("--look", action=argparse.BooleanOptionalAction,
                     default=True,
                     help="finishing grade: contrast/saturation pop, "
                          "crisper text on screen recordings (default on)")
     ap.add_argument("--hook-card", action=argparse.BooleanOptionalAction,
-                    default=False,
-                    help="Animated text card over the opening 1.6s "
-                         "(vertical only, default OFF). Reuses the caption "
-                         "text unless --hook-card-text is given.")
+                    default=None,
+                    help="Animated text card over the opening (vertical "
+                         "only; default: follows --hook). Uses the "
+                         "detected payoff line, else the caption, unless "
+                         "--hook-card-text is given.")
     ap.add_argument("--hook-card-text", default=None,
                     help="Override the hook card text (defaults to the "
-                         "caption)")
+                         "payoff line / caption)")
     ap.add_argument("--hook-card-pushin",
                     action=argparse.BooleanOptionalAction, default=False,
                     help="Also ease the footage in under the card "
@@ -125,6 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="have Claude watch the clip and delete mistyped "
                          "commands / terminal errors / fumbles before the "
                          "retype (needs the claude CLI; best-effort)")
+    ap.add_argument("--detect-payoff", action="store_true",
+                    help="have Claude find the demo/payoff span: it plays "
+                         "at strict 1.0x, the cold open teases it, and its "
+                         "line rides the hook card (needs the claude CLI; "
+                         "best-effort)")
     ap.add_argument("--keep-audio", action="store_true",
                     help="Keep the original ambient audio. By default the "
                          "export is muted so you add a TikTok sound in-app.")
@@ -153,18 +164,26 @@ def plan(
     input_path: str, target: float | str | None, hook: bool = True,
     trim_start: float = 0.0, trim_end: float = 0.0,
     cut_spans_src: list[tuple[float, float]] | None = None,
+    payoff: tuple[float, float] | None = None,
+    fast_action: bool = True,
 ) -> tuple[SourceInfo, list[SpeedSegment], float, np.ndarray,
            tuple[float, float] | None]:
     """Analysis + edit decisions.
 
     `target` is seconds, None (base tier speeds), or "auto" — solve a
     TikTok-friendly length from the content (completion-rate sweet spot,
-    floored by the real-time action). `cut_spans_src` are source-second
-    spans to delete outright (e.g. a mistyped command and the error it
-    threw — see judge.detect_mistakes). Returns (src, segments, est,
-    frames, hook_window). When a hook is chosen, the first segment is a
-    1x cold open of the video's best beat; leading/trailing dead footage
-    is hard-trimmed either way.
+    floored by the real-time demo + the coding at its cap).
+    `cut_spans_src` are source-second spans to delete outright (e.g. a
+    mistyped command and the error it threw — see judge.detect_mistakes).
+    `payoff` is the judge-found demo span (source seconds,
+    judge.detect_payoff): it plays at strict 1.0x whatever the
+    compression, mistake cuts are kept out of it, and the cold-open hook
+    teases its strongest beat. `fast_action` lets the coding/action tier
+    join the target solve (silent exports); pass False when the original
+    audio is kept so speech is never atempo-sped. Returns (src, segments,
+    est, frames, hook_window). When a hook is chosen, the first segment
+    is a 1x cold open of the video's best beat; leading/trailing dead
+    footage is hard-trimmed either way.
     """
     src = probe(input_path)
     raw_scores, frames = motion_scores(input_path, src)
@@ -195,45 +214,59 @@ def plan(
         if seg_brightness([dur_eff, dur]) > dark * BRIGHT_TAIL_RATIO:
             dur_eff = max(dur_eff, dur - 0.3)
 
-    runs = trim_dead_ends(
-        to_segments(classify(scores), duration=dur_eff), seg_brightness)
+    runs = to_segments(classify(scores), duration=dur_eff)
+    # The judge-found DEMO — the payoff actually running — is sacred: pin
+    # it to real time before any trimming or compression so the viewer
+    # always sees the result at 1.0x however hard the rest is squeezed.
+    demo: tuple[float, float] | None = None
+    if payoff is not None:
+        a, b = max(head, payoff[0]), min(dur_eff, payoff[1])
+        if b - a >= 1.0:
+            demo = (a, b)
+            runs = protect_spans(runs, [demo])
+    runs = trim_dead_ends(runs, seg_brightness)
     if head:
         runs = [[max(s, head), e, t] for s, e, t in runs if e > head]
     # drop the fumbles — a mistyped command, its error, the retype before
     # the good take — so the export is clean live coding (judge-detected
-    # source spans; empty/None when there's nothing to cut)
+    # source spans; empty/None when there's nothing to cut). A cut is
+    # never allowed to eat into the protected demo.
+    if cut_spans_src and demo:
+        cut_spans_src = shield_spans(cut_spans_src, demo)
     if cut_spans_src:
         runs = cut_spans(runs, cut_spans_src)
-    # Live coding stays at real time: the typing IS the content, so the
-    # action tier is never accelerated, screen recording or not. The
-    # dead/lag fast-forward is still capped lower for camera footage (it
-    # blurs past ~4x) than for screen content (legible at full MAX_SPEED).
+    # Pacing: the CODING (action tier) may join the target solve up to
+    # ACTION_FIT_MAX — typing reads fine mildly sped, and the protected
+    # demo above is what must stay real — but only on a silent export
+    # (atempo-sped speech sounds wrong). The dead/lag fast-forward is
+    # still capped lower for camera footage (it blurs past ~4x) than for
+    # screen content (legible at full MAX_SPEED).
     screen = is_landscape(src)
-    max_action = 1.0
+    max_action = ACTION_FIT_MAX if fast_action else 1.0
     max_fast = MAX_SPEED if screen else CAMERA_FAST_MAX
     if target == "auto":
         target = auto_target(runs, max_action)
     target = cast("float | None", target)
-    # Keep a finished TikTok under ~2 min. Camera footage caps its fast
-    # tiers at CAMERA_FAST_MAX because a phone-filmed desk blurs past ~4x —
-    # but that cap can floor a long clip well over the ceiling. Escalate in
-    # two stages, quality-preserving first:
+    # Keep a finished TikTok under ~2 min. Escalate in two stages,
+    # quality-preserving first:
     #   1) let the IDLE (dead/lag) stretches fast-forward up to MAX_SPEED
-    #      (blurring the waiting is fine);
-    #   2) only if that still overshoots, let the CODING speed up too — up
-    #      to ACTION_FIT_MAX, aiming AT the ceiling so it's sped as little as
-    #      needed rather than to the short auto target.
-    if target and not screen:
+    #      (blurring the waiting is fine — camera clips start capped);
+    #   2) only if that still overshoots, push the CODING further — up to
+    #      ACTION_HARD_MAX, aiming AT the ceiling so it's sped as little
+    #      as needed rather than to the short auto target.
+    if target:
         if max_fast < MAX_SPEED:
             _, est = assign_speeds(runs, target, max_action, max_fast)
             if est > AUTO_HARD_MAX:
                 max_fast = MAX_SPEED
         _, est = assign_speeds(runs, target, max_action, max_fast)
-        if est > AUTO_HARD_MAX:
-            max_action = ACTION_FIT_MAX
+        if est > AUTO_HARD_MAX and fast_action:
+            max_action = ACTION_HARD_MAX
             target = AUTO_HARD_MAX
 
-    hook_win = pick_hook(scores, dur_eff) if hook else None
+    # the teaser hunts inside the demo span when the judge found one —
+    # the cold open then shows the actual payoff, not just "most motion"
+    hook_win = pick_hook(scores, dur_eff, within=demo) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
                     if target and hook_win else target)
     segs, est = assign_speeds(runs, solve_target, max_action, max_fast)
@@ -257,10 +290,12 @@ def edit(
     trim_start: float = 0.0,
     trim_end: float = 0.0,
     cut_spans_src: list[tuple[float, float]] | None = None,
+    payoff_span: tuple[float, float] | None = None,
+    hook_line: str = "",
     crop_enabled: bool = True,
     zoom: float = 1.0,
     look_enabled: bool = True,
-    hook_card: bool = False,
+    hook_card: bool | None = None,
     hook_card_text: str | None = None,
     hook_card_pushin: bool = False,
     keep_audio: bool = False,
@@ -282,12 +317,22 @@ def edit(
     hook, crop and music, but no vertical canvas and **no caption** (a
     landscape video in TikTok can't go fullscreen behind a baked caption;
     the creator overlays their own).
+
+    `payoff_span` / `hook_line` come from judge.detect_payoff: the demo
+    span plays at strict 1.0x and seeds the cold-open teaser; the line
+    rides the hook card. `hook_card=None` (default) bakes the card
+    whenever the hook is on — the card is how the cold open tells the
+    viewer what they're about to watch.
     """
     notify = on_progress or (lambda _line: None)
     out = output or os.path.splitext(input_path)[0] + "_remy.mp4"
 
     src, segs, est, frames, hook_win = plan(
-        input_path, target, hook, trim_start, trim_end, cut_spans_src)
+        input_path, target, hook, trim_start, trim_end, cut_spans_src,
+        payoff=payoff_span, fast_action=not keep_audio)
+    if payoff_span:
+        notify(f"demo kept real-time: {payoff_span[0]:.1f}–"
+               f"{payoff_span[1]:.1f}s (source)")
     if trim_start or trim_end:
         notify(f"manual trim: −{trim_start:.1f}s head / −{trim_end:.1f}s tail")
     if cut_spans_src:
@@ -331,8 +376,9 @@ def edit(
             tag = f"FAST  {sp:.2f}x"
         lines.append(f"  {s:7.2f} - {e:7.2f}  {tag}")
     notify("\n".join(lines))
-    card_text = (hook_card_text or caption).strip()
-    use_card = hook_card and not landscape and bool(card_text)
+    card_text = (hook_card_text or hook_line or caption).strip()
+    use_card = ((hook if hook_card is None else hook_card)
+                and not landscape and bool(card_text))
     if use_card:
         notify(f'hook card: "{card_text}" '
                f"(0.0–{HOOK_CARD_DUR}s, fade-in/out)")
@@ -478,6 +524,30 @@ def _detect_sections_cli(
     return secs or None
 
 
+def _detect_payoff_cli(
+    input_path: str,
+) -> tuple[tuple[float, float] | None, str]:
+    """Run the Claude payoff pass for the CLI's --detect-payoff.
+
+    Best-effort: prints a note and returns (None, "") on any failure so
+    the edit still runs with the motion-picked hook and normal pacing.
+    """
+    from .judge import JudgeUnavailable, claude_available, detect_payoff
+    if not claude_available():
+        print("⚠ --detect-payoff needs the claude CLI on PATH; skipping",
+              file=sys.stderr)
+        return None, ""
+    try:
+        dur = probe(input_path)["duration"]
+        span, line = detect_payoff(input_path, dur)
+    except (JudgeUnavailable, ValueError) as exc:
+        print(f"⚠ payoff detection unavailable: {exc}", file=sys.stderr)
+        return None, ""
+    if span is None:
+        print("✓ no distinct payoff span found", file=sys.stderr)
+    return span, line
+
+
 def _detect_mistakes_cli(input_path: str) -> list[tuple[float, float]] | None:
     """Run the Claude mistake-detection pass for the CLI's --cut-mistakes.
 
@@ -511,6 +581,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cut_mistakes:
         cut_spans_src = _detect_mistakes_cli(args.input)
 
+    payoff_span: tuple[float, float] | None = None
+    hook_line = ""
+    if args.detect_payoff:
+        payoff_span, hook_line = _detect_payoff_cli(args.input)
+
     try:
         out = edit(
             args.input,
@@ -524,6 +599,8 @@ def main(argv: list[str] | None = None) -> int:
             trim_start=args.trim_start,
             trim_end=args.trim_end,
             cut_spans_src=cut_spans_src,
+            payoff_span=payoff_span,
+            hook_line=hook_line,
             crop_enabled=args.crop,
             zoom=args.zoom,
             look_enabled=args.look,

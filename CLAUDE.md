@@ -23,7 +23,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 | `remy/render.py` | ffmpeg filtergraph builder + encode |
 | `remy/cli.py` | argparse entry point (`python -m remy` / `remy`) |
 | `remy/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
-| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
+| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), finds the **demo/payoff span + cold-open line** (`detect_payoff` → the span where the built thing actually runs, pinned to 1.0x via `analysis.protect_spans` and teased by the 3s hook; the line rides the hook card), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
 | `remy/bot/` | private Telegram bot (`config`, `pipeline`, `app`) — see docs/BOT.md |
 | `tests/` | pytest suite — pure logic, no ffmpeg/network needed (one font-gated test) |
 | `docs/USAGE.md` | how to run it |
@@ -46,28 +46,36 @@ edited clip ready to post (see `docs/IDEAS.md`).
    tiers on constantly-updating screen recordings).
 4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
    `content_crop`) — hard-trim boring lead-ins/outros (open and close on
-   action); optionally prepend a ~2.2s cold-open hook of the strongest
+   action); optionally prepend a **~3s cold-open hook** of the strongest
    beat (biased late, where the payoff lives; opt-in via `--hook`, off by
-   default — the bot defaults it off too); auto-zoom into
+   default — the bot defaults it off too). When the judge found the
+   payoff (`detect_payoff`), the teaser is picked **inside that span**
+   (`pick_hook(within=…)`) so the cold open shows the actual result, and
+   the **hook card** (an animated text pill saying what's coming, worded
+   by the judge's payoff line) bakes automatically whenever the hook is
+   on (`--no-hook-card` opts out). Auto-zoom into
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).
    `--zoom F` (`analysis.zoom_crop`) is the creator's framing dial on
    top of the auto framing: >1 punches in tighter around the same
    center, <1 pulls wider (bot buttons 🔎/🔭, free text "closer"/"wider").
-5. **Speeds** (`analysis.assign_speeds`) — pacing is deliberately gentle
-   (this is a live-coding / tutorial editor: the viewer reads along).
-   Action 1.0x, lag ≈1.3x, dead ≈2.4x; `--target N` binary-searches the
-   fast-tier speeds to hit N seconds. Default is `--target auto`
-   (`analysis.auto_target`): natural pacing ≤55s is kept, longer compresses
-   toward a ~45s sweet spot, floored by the 1x action time. **Action is
-   never sped up — coding/typing always plays at real time**, screen
-   recording or camera alike (`cli.plan` pins `max_action=1.0`); the
-   `SCREEN_ACTION_MAX` capability is kept in `assign_speeds`/`auto_target`
-   for callers that want it, but the pipeline no longer accelerates screen
-   action. `--target none` keeps base tier speeds. The dead/lag
-   fast-forward is capped at `MAX_SPEED` (6x) for **screen** content (text
-   is legible at any speed) but at `CAMERA_FAST_MAX` (4x) for **handheld
-   camera** footage — past ~4x a phone-filmed desk smears into an
-   unwatchable blur (`assign_speeds(..., max_fast_speed=…)`).
+5. **Speeds** (`analysis.assign_speeds`) — base tiers are gentle: action
+   1.0x, lag ≈1.3x, dead ≈2.4x; `--target N` binary-searches the tier
+   speeds to hit N seconds. Default is `--target auto`
+   (`analysis.auto_target`): natural pacing ≤55s is kept, longer
+   compresses toward a ~45s sweet spot. **The judge-found DEMO span
+   (`judge.detect_payoff` → `analysis.protect_spans`, `PROTECTED_TIER`)
+   is pinned to strict 1.0x** — the payoff actually running is what the
+   viewer came for — and it survives tail-trims and mistake-cuts
+   (`shield_spans`). The **coding/typing may speed up** in the target
+   solve (silent exports only — `fast_action=not keep_audio` — so speech
+   is never atempo-sped): up to `ACTION_FIT_MAX` (1.8x) normally, and
+   past the ~2-min ceiling (`AUTO_HARD_MAX`) it escalates idle to
+   `MAX_SPEED` first, then coding to `ACTION_HARD_MAX` (2.5x) aiming AT
+   the ceiling. `--target none` keeps base tier speeds. The dead/lag
+   fast-forward is capped at `MAX_SPEED` (6x) for **screen** content
+   (text is legible at any speed) but at `CAMERA_FAST_MAX` (4x) for
+   **handheld camera** footage — past ~4x a phone-filmed desk smears into
+   an unwatchable blur (`assign_speeds(..., max_fast_speed=…)`).
    **Mistake-cutting** (`judge.detect_mistakes` → `analysis.cut_spans`,
    threaded through `cli.plan(..., cut_spans_src=…)`): an optional Claude
    pass watches the clip and returns source-second spans of mistyped
@@ -76,7 +84,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
    working coding. Best-effort and validated/capped in `clean_cut_spans`
    (≤50% of the clip). CLI `--cut-mistakes` (off by default, needs the
    `claude` CLI); the bot runs it automatically at upload alongside the
-   caption/content-window passes.
+   caption/content-window/payoff passes.
 6. **Caption** (`caption.make_caption` + `layout.compute_layout`) — Pillow
    renders a heavy **upright** sans (Open Sans ExtraBold, falling back to
    DejaVu/Liberation; `REMY_FONT` overrides) in the style colour on rounded
@@ -181,10 +189,10 @@ edited clip ready to post (see `docs/IDEAS.md`).
   (`analysis.edit_window`: head 1.5s, tail 3.0s), crops to the **window
   hosting the action** (`analysis.window_crop`: desktop strips/docks
   fall away, on-screen text is never sliced — motion-only boxes cut
-  static terminal text mid-character). Like everything else, landscape
-  action plays at strict **1.0x** — live coding is the content and is
-  never accelerated; only the dead/lag waiting between commands is
-  fast-forwarded.
+  static terminal text mid-character). Landscape follows the same pacing
+  doctrine as vertical: the judge-protected **demo plays strict 1.0x**,
+  the coding may mildly speed up under a length target (silent exports),
+  and the dead/lag waiting between commands is fast-forwarded hardest.
 - One caption per video (vertical only), persistent for the entire
   duration. Make it specific about what the viewer is watching, e.g.
   "How I set this up ⚡". Run it past `check_caption` —
