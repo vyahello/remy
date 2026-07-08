@@ -358,7 +358,7 @@ def test_plan_protects_payoff_and_teases_it(monkeypatch):
     _src, segs, _est, _fr, hook_win = cli.plan(
         "in.mp4", "auto", hook=True, payoff=(80.0, 90.0))
     assert hook_win is not None
-    assert 77.0 <= hook_win[0] and hook_win[1] <= 91.0  # teased from the demo
+    assert 76.0 <= hook_win[0] and hook_win[1] <= 92.0  # teased from the demo
     body = segs[1:]
     assert any(abs(s - 80.0) < 0.5 and abs(e - 90.0) < 0.5
                and sp == pytest.approx(1.0) for s, e, sp in body)

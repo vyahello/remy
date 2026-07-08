@@ -23,7 +23,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 | `remy/render.py` | ffmpeg filtergraph builder + encode |
 | `remy/cli.py` | argparse entry point (`python -m remy` / `remy`) |
 | `remy/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
-| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), finds the **demo/payoff span + cold-open line** (`detect_payoff` → the span where the built thing actually runs, pinned to 1.0x via `analysis.protect_spans` and teased by the 3s hook; the line rides the hook card), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
+| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), finds the **demo/payoff span + cold-open line** (`detect_payoff` → the span where the built thing actually runs, pinned to 1.0x via `analysis.protect_spans` and teased by the 4s hook; the line rides the hook card), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
 | `remy/bot/` | private Telegram bot (`config`, `pipeline`, `app`) — see docs/BOT.md |
 | `tests/` | pytest suite — pure logic, no ffmpeg/network needed (one font-gated test) |
 | `docs/USAGE.md` | how to run it |
@@ -46,7 +46,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
    tiers on constantly-updating screen recordings).
 4. **Editorial cuts** (`analysis.trim_dead_ends`, `pick_hook`,
    `content_crop`) — hard-trim boring lead-ins/outros (open and close on
-   action); optionally prepend a **~3s cold-open hook** of the strongest
+   action); optionally prepend a **~4s cold-open hook** of the strongest
    beat (biased late, where the payoff lives; CLI opt-in via `--hook`,
    but the **bot defaults it ON** — 🪝 toggles it off). When the judge
    found the payoff (`detect_payoff`), the teaser is picked **inside that

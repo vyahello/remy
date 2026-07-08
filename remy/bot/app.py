@@ -286,7 +286,7 @@ async def help_cmd(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Claude watches the clip and proposes captions. In the setup "
         "screen you:\n"
         "• tap a caption idea, *type your own*, or *🚫 No caption*\n"
-        "• flip the options you want — cold open (on by default: a 3s "
+        "• flip the options you want — cold open (on by default: a 4s "
         "payoff teaser + card), zoom, look\n"
         "• tap *🎬 Render* when ready.\n"
         "📱 Vertical → 1080x1920. 🖥️ Landscape → native resolution, no "
@@ -593,7 +593,7 @@ async def on_clip(update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # No auto-render: Claude proposes captions, then the creator picks the
     # caption + options in a setup screen and taps Render (defaults: cold
-    # open ON — the 3s payoff teaser + card — no caption until picked).
+    # open ON — the 4s payoff teaser + card — no caption until picked).
     vertical = src["w"] <= src["h"]
     ideas: list[str] = []
     subject = ""

@@ -36,7 +36,7 @@ class EditParams:
     style: str = DEFAULT_STYLE
     caption_pos: str = "auto"
     caption_mode: str = "static"  # "static" one line | "dynamic" step labels
-    # cold-open teaser + card — ON by default in the bot (the 3s payoff
+    # cold-open teaser + card — ON by default in the bot (the 4s payoff
     # tease is the reach lever; 🪝 toggles it off). The CLI stays opt-in.
     hook: bool = True
     trim_start: float = 0.0  # secs hard-cut off the source head (intro)

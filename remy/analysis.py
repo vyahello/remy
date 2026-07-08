@@ -398,7 +398,7 @@ def trim_dead_ends(
 def pick_hook(
     scores: np.ndarray,
     duration: float,
-    hook_sec: float = 3.0,
+    hook_sec: float = 4.0,
     skip_head: float = 4.0,
     sample_fps: int = SAMPLE_FPS,
     within: tuple[float, float] | None = None,

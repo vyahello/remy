@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
                          "labels (needs the claude CLI to label the steps)")
     ap.add_argument("--hook", action=argparse.BooleanOptionalAction,
                     default=False,
-                    help="Cold-open: a ~3s teaser of the video's strongest "
+                    help="Cold-open: a ~4s teaser of the video's strongest "
                          "beat before the chronological cut, with a text "
                          "card saying what's coming (default off; pairs "
                          "with --detect-payoff for a Claude-picked moment)")

@@ -27,7 +27,7 @@ Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 | `--zoom F` | 1.0 | Framing dial on top of the auto-zoom: `1.2` punches in tighter around the same center, `0.8` pulls wider. Works even with `--no-crop` (a deliberate centered punch-in). |
 | `--trim-start SEC` | 0 | Hard-cut this many seconds off the source **head** — a recorder-UI intro (OBS/screen-capture window), a long fumble before the action. Stacks on the automatic edge-trim (whichever removes more wins). |
 | `--trim-end SEC` | 0 | Hard-cut this many seconds off the source **tail** — a redundant outro (exiting the app, the stop-recording shuffle). Stacks on the automatic edge-trim. |
-| `--hook-card` / `--no-hook-card` | follows `--hook` | Animated text card over the opening ~3.3s (vertical only). On by default whenever the hook is on; `--no-hook-card` opts out. See [Hook card](#hook-card). |
+| `--hook-card` / `--no-hook-card` | follows `--hook` | Animated text card over the opening ~4.3s (vertical only). On by default whenever the hook is on; `--no-hook-card` opts out. See [Hook card](#hook-card). |
 | `--hook-card-text` | payoff line / caption | Override the hook card text (defaults to the detected payoff line, else the caption). |
 | `--hook-card-pushin` / `--no-hook-card-pushin` | off | Also ease the footage in under the card while it's visible. |
 | `--keep-audio` | off | Keep the original ambient audio. **By default the export is muted** (no audio track) so you add a TikTok sound in-app. |
@@ -40,7 +40,7 @@ Output lands next to the input as `YOUR_CLIP_remy.mp4` unless you pass
 
 ## Hook card
 
-The hook card is an **animated text card over the opening ~3.3s** — the
+The hook card is an **animated text card over the opening ~4.3s** — the
 single most-watched moment — that tells scrollers exactly what they're
 about to watch. It bakes automatically whenever `--hook` is on (the cold
 open without words is just unexplained footage); `--no-hook-card` opts
