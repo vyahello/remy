@@ -33,3 +33,8 @@ htmlcov/
 .env*
 *.local
 config.local.*
+
+# Personal build scripts (per-video part builders, tutorial drafts) —
+# keep the shared recorder helper, ignore the rest
+scripts/*
+!scripts/record_tiktok_screen.sh
