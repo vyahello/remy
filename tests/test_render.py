@@ -364,6 +364,28 @@ def test_plan_protects_payoff_and_teases_it(monkeypatch):
                and sp == pytest.approx(1.0) for s, e, sp in body)
 
 
+def test_plan_hook_falls_back_to_content_tail_not_a_spike(monkeypatch):
+    # no judge payoff: the cold open must still open on the END of the
+    # content (a build video's result lives there), never the chaotic
+    # mid-clip motion spike that the global "most motion" pick would grab
+    from remy import cli
+    from remy.analysis import SAMPLE_FPS
+    dur = 100.0
+    src = {"w": 1080, "h": 1920, "fps": 60, "audio": True,
+           "duration": dur, "transfer": ""}
+    n = int(dur * SAMPLE_FPS)
+    scores = np.full(n, 10.0)             # active throughout
+    scores[38 * SAMPLE_FPS:42 * SAMPLE_FPS] = 500.0  # huge mid-clip spike
+    frames = np.full((n, 4, 4), 50, dtype=np.int16)
+    monkeypatch.setattr(cli, "probe", lambda p: src)
+    monkeypatch.setattr(cli, "motion_scores", lambda p, s: (scores, frames))
+    _src, segs, _est, _fr, hook = cli.plan(
+        "in.mp4", "auto", hook=True, payoff=None)
+    assert hook is not None
+    assert hook[0] > 60.0                 # tail-anchored, not the 40s spike
+    assert hook[1] <= dur
+
+
 def test_filtergraph_vertical_no_caption():
     segs = [(0, 5, 1.0)]
     fc, v, _a = R.build_filtergraph(segs, SRC, LAY, 60, has_caption=False)

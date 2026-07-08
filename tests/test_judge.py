@@ -25,6 +25,22 @@ def test_spread_times_zero_margin_stays_clear_of_eof():
     assert times == sorted(times)
 
 
+def test_tail_weighted_times_packs_the_end_and_clears_eof():
+    # a build video's payoff is a small slice at the END; sampling must
+    # cluster there so it's never missed, while keeping early context
+    dur = 586.0
+    times = J.tail_weighted_times(dur, n=20)
+    assert times == sorted(times)
+    assert times[0] < dur * 0.2                 # early context frame kept
+    assert times[-1] <= dur - 0.7               # last frame clears EOF
+    # clustered late: the median frame sits well past the midpoint, and
+    # far more frames land in the last fifth than a uniform spread's ~4
+    assert times[len(times) // 2] > dur * 0.6
+    assert len([t for t in times if t >= dur * 0.8]) >= 8
+    # and the final gap is far tighter than a uniform spread would give
+    assert times[-1] - times[-2] < (dur / 20) / 2
+
+
 def test_parse_json_obj_plain():
     assert J.parse_json_obj('{"a": 1}') == {"a": 1}
 
@@ -280,3 +296,12 @@ def test_clean_payoff_drops_risky_or_overlong_line():
     _, line = J.clean_payoff(
         {"start": 10, "end": 20, "line": "x" * 80}, 60.0)
     assert line == ""
+
+
+def test_payoff_prompt_scopes_the_span_to_the_on_screen_result():
+    # the demo span must be the rendered OUTPUT, never the code editor or
+    # terminal that produced it — this is what keeps the cold open clean
+    p = J.PAYOFF_PROMPT.lower()
+    assert "output" in p and "on screen" in p
+    assert "not the code editor" in p and "terminal" in p
+    assert "start later" in p  # bias to the result when the boundary is fuzzy

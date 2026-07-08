@@ -23,7 +23,7 @@ edited clip ready to post (see `docs/IDEAS.md`).
 | `remy/render.py` | ffmpeg filtergraph builder + encode |
 | `remy/cli.py` | argparse entry point (`python -m remy` / `remy`) |
 | `remy/types.py` | shared `SourceInfo`/`Layout` TypedDicts + `Segment`/`SpeedSegment` aliases |
-| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), finds the **demo/payoff span + cold-open line** (`detect_payoff` → the span where the built thing actually runs, pinned to 1.0x via `analysis.protect_spans` and teased by the 4s hook; the line rides the hook card), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
+| `remy/judge.py` | Claude Code judgment layer: headless `claude -p` writes captions from sampled frames, detects the **content window** of a screen recording (`detect_content_window` → trim out an OBS/recorder-UI intro & the post-quit outro the motion heuristic can't see), finds **fumbles to cut** (`detect_mistakes` → source-second spans of mistyped commands / terminal errors / dead ends, deleted via `analysis.cut_spans` so only clean live coding ships), labels the video's **steps for dynamic captions** (`detect_sections` → ordered source-second `(start, label)` markers; `analysis.caption_windows` maps them to output-time windows so one short label shows at a time — the changing-caption walkthrough mode), finds the **demo/payoff span + cold-open line** (`detect_payoff` → the span where the built thing's OUTPUT is on screen — the rendered result, *not* the code editor / terminal that produced it — pinned to 1.0x via `analysis.protect_spans`; the 4s hook is drawn from the **tail** of that span so the cold open shows the settled result, never code/terminal; the line rides the hook card), and after render writes paste-ready TikTok post copy — an educational, actionable blurb (what the video teaches + how to use it) + relevant hashtags — grounded in the output frames (subscription OAuth) |
 | `remy/bot/` | private Telegram bot (`config`, `pipeline`, `app`) — see docs/BOT.md |
 | `tests/` | pytest suite — pure logic, no ffmpeg/network needed (one font-gated test) |
 | `docs/USAGE.md` | how to run it |
@@ -49,12 +49,21 @@ edited clip ready to post (see `docs/IDEAS.md`).
    action); optionally prepend a **~4s cold-open hook** of the strongest
    beat (biased late, where the payoff lives; CLI opt-in via `--hook`,
    but the **bot defaults it ON** — 🪝 toggles it off). When the judge
-   found the payoff (`detect_payoff`), the teaser is picked **inside that
-   span**
-   (`pick_hook(within=…)`) so the cold open shows the actual result, and
-   the **hook card** (an animated text pill saying what's coming, worded
-   by the judge's payoff line) bakes automatically whenever the hook is
-   on (`--no-hook-card` opts out). Auto-zoom into
+   found the payoff (`detect_payoff`), the teaser is drawn from the
+   **tail of that span** (`pick_hook(within=…)`) so the cold open shows
+   the **finished, settled result** (the animation fully formed, the app
+   doing its thing) — never the chaotic onset and never the code/terminal
+   that precedes it, which is what the coarse detector can over-include
+   at the span's start. Anchoring the teaser to the span's *end* (the
+   reliable last-result frame) is what makes it robust to a fuzzy start.
+   The payoff pass samples **end-clustered frames**
+   (`judge.tail_weighted_times`) so a payoff that's a tiny slice of a long
+   clip is reliably found; if the judge still finds none, the hook falls
+   back to the **tail of the content** (not the global motion peak) so the
+   cold open never opens on a mid-clip motion spike. The **hook card** (an
+   animated text pill saying what's coming, worded by the judge's payoff
+   line) bakes automatically whenever the hook is on (`--no-hook-card`
+   opts out). Auto-zoom into
    the motion-energy bounding box when it gains ≥10% (`--no-crop`).
    `--zoom F` (`analysis.zoom_crop`) is the creator's framing dial on
    top of the auto framing: >1 punches in tighter around the same

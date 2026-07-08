@@ -17,6 +17,7 @@ from .analysis import (
     AUTO_HARD_MAX,
     BRIGHT_TAIL_RATIO,
     CAMERA_FAST_MAX,
+    HOOK_SEC,
     MAX_SPEED,
     SAMPLE_FPS,
     assign_speeds,
@@ -264,9 +265,17 @@ def plan(
             max_action = ACTION_HARD_MAX
             target = AUTO_HARD_MAX
 
-    # the teaser hunts inside the demo span when the judge found one —
-    # the cold open then shows the actual payoff, not just "most motion"
-    hook_win = pick_hook(scores, dur_eff, within=demo) if hook else None
+    # The teaser must open on the PAYOFF. First choice: the judge's demo
+    # span (tail-anchored, so it shows the finished result). If the judge
+    # found none, fall back to the tail of the CONTENT rather than the
+    # global motion peak — for a build/coding video the result is what's
+    # on screen at the end, and a mid-clip motion spike (a burst of
+    # particles, a fast scroll) makes a confusing cold open.
+    hook_within = demo
+    if hook and demo is None and runs:
+        content_end = runs[-1][1]
+        hook_within = (max(head, content_end - 2 * HOOK_SEC), content_end)
+    hook_win = pick_hook(scores, dur_eff, within=hook_within) if hook else None
     solve_target = (target - (hook_win[1] - hook_win[0])
                     if target and hook_win else target)
     segs, est = assign_speeds(runs, solve_target, max_action, max_fast)

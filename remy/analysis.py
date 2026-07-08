@@ -28,6 +28,7 @@ PROTECTED_TIER = 3
 # same scene, just quicker. Screen recordings stay legible at MAX_SPEED
 # (text is text at any speed), so the cap is camera-only.
 CAMERA_FAST_MAX = 4.0
+HOOK_SEC = 4.0          # cold-open teaser length (the payoff tease)
 
 
 def probe(path: str) -> SourceInfo:
@@ -398,7 +399,7 @@ def trim_dead_ends(
 def pick_hook(
     scores: np.ndarray,
     duration: float,
-    hook_sec: float = 4.0,
+    hook_sec: float = HOOK_SEC,
     skip_head: float = 4.0,
     sample_fps: int = SAMPLE_FPS,
     within: tuple[float, float] | None = None,
@@ -411,25 +412,45 @@ def pick_hook(
     opening seconds are skipped entirely (a hook from the existing
     opening adds nothing). None when the video is too short to bother.
 
-    `within` (when given) restricts the search to a source window — the
-    judge-detected demo/payoff span — so the teaser shows the strongest
-    beat of the actual RESULT instead of whatever moved most anywhere in
-    the clip. A window shorter than the teaser still works: the pick
-    centers on its peak and pads out around it.
+    `within` (when given) is the judge-detected demo/payoff span. The
+    teaser is drawn from the TAIL of that span (its last ~1.5x the teaser
+    length), not the highest-motion moment anywhere — so the cold open
+    shows the finished, recognisable result (the "heart fully formed"),
+    never the chaotic onset (a page loading, particles bursting) and
+    never the code/terminal that precedes it. Anchoring to the end is
+    what makes this robust to a coarse detector that over-includes a few
+    seconds of code at the span's start. A window shorter than the teaser
+    still works: the pick ends at the span end and pads out earlier.
     """
     if duration < skip_head + 2 * hook_sec:
         return None
     # progress ramp: a peak at the end weighs 2.5x one at the start
     weighted = scores * np.linspace(0.4, 1.0, len(scores))
     lo, hi = int(skip_head * sample_fps), len(scores)
+    tail: tuple[float, float] | None = None
     if within is not None:
         wlo = int(max(0.0, min(within)) * sample_fps)
         whi = int(min(duration, max(within)) * sample_fps)
         if whi > wlo:  # a degenerate window falls back to the full search
-            lo, hi = min(wlo, len(scores) - 1), min(max(whi, wlo + 1), hi)
+            # The finished result is the TAIL of the demo; the head holds
+            # the onset (a page loading, particles bursting) plus any code
+            # the coarse detector over-included at the start. The end of
+            # the span is reliably the last result frame, so tease the
+            # last stretch only — the cold open then shows the settled,
+            # recognisable result (the "heart fully formed"), never the
+            # messy first frame and never the code/terminal before it.
+            span_end = min(max(within), duration)
+            tail = (max(min(within), span_end - 1.5 * hook_sec), span_end)
+            lo = min(int(tail[0] * sample_fps), len(scores) - 1)
+            hi = min(max(whi, lo + 1), len(scores))
     peak = lo + int(np.argmax(weighted[lo:hi]))
     t_peak = peak / sample_fps
     start = min(max(0.0, t_peak - hook_sec / 2), duration - hook_sec)
+    if tail is not None:
+        # keep the teaser inside the tail and ending by the demo's end, so
+        # it can never slide back toward the onset or the preceding code
+        hi_start = min(duration - hook_sec, tail[1] - hook_sec)
+        start = max(0.0, min(max(start, min(tail[0], hi_start)), hi_start))
     return start, start + hook_sec
 
 

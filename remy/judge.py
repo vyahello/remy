@@ -55,6 +55,27 @@ def spread_times(duration: float, n: int = N_FRAMES,
     return [lo + i * step for i in range(n)]
 
 
+def tail_weighted_times(duration: float, n: int = N_FRAMES) -> list[float]:
+    """N timestamps that thin out early and pack in near the END.
+
+    A build/coding video's payoff — the thing actually running — lives in
+    the last stretch and is often a tiny fraction of the runtime, so
+    uniform sampling can land ZERO frames on it and the judge, seeing only
+    code, reports no payoff at all. Reverse power-law spacing (gap ∝
+    distance-from-end²) clusters frames into the final seconds so the
+    result is reliably captured, while still keeping a few early frames
+    for context (what the setup/code looked like). The last frame stays
+    clear of EOF for the same reason as `spread_times`.
+    """
+    n = max(2, n)
+    hi = max(0.0, duration - 0.75)
+    if hi <= 0.0:
+        return [duration / 2]
+    # j runs 1→0 across the frames; squaring biases the spacing to the end
+    times = [hi * (1.0 - ((n - 1 - i) / (n - 1)) ** 2) for i in range(n)]
+    return sorted({round(t, 2) for t in times})
+
+
 def extract_frames(video: str, times: list[float], outdir: str,
                    width: int = FRAME_WIDTH) -> list[str]:
     """Decode one frame per timestamp as a small JPEG; returns paths.
@@ -698,26 +719,38 @@ def detect_sections(
 
 
 PAYOFF_PROMPT = CREATOR_CONTEXT + """
-You are a TikTok editor finding the PAYOFF of a build / coding video —
-the span where the built thing actually RUNS: the script executes and
-prints its result, the device screen comes alive and does the thing, the
-app shows the finished behaviour. Each frame is labelled with its
-timestamp in seconds (the t…s in the filename).
+You are a TikTok editor finding the PAYOFF of a build / coding video:
+the moment the built thing's OUTPUT is visibly running ON SCREEN — the
+result rendered in a browser tab, the app's own window doing its thing,
+an animation playing, a game running, a tool's output filling the
+screen. Each frame is labelled with its timestamp in seconds (the t…s in
+the filename).
 
 Frames sampled in order from the {duration:.0f}s source:
 {frames}
 
 Report two things:
 
-1. The DEMO span, in SOURCE seconds. The edit keeps this span at real
-   speed (everything else may fast-forward) AND its strongest beat opens
-   the video as the cold-open teaser, so precision matters:
-   - start: the moment the payoff begins (the run command fires, the
-     device starts doing the thing) — not the typing that led up to it;
-   - end: the last frame still showing the result.
-   Pick the single clearest payoff; if the result appears several times,
-   prefer the LAST, most complete demonstration. If no frame shows a
-   distinct payoff, return 0 for both.
+1. The DEMO span, in SOURCE seconds — the stretch where the finished
+   RESULT is visible on screen. This span opens the video as the
+   cold-open teaser AND plays at real speed, so it must contain ONLY the
+   result, never the work that produced it:
+   - It is NOT the code editor and NOT the terminal / shell / run
+     command. Those build and launch the result but are not the result.
+     EXCLUDE every frame whose main content is source code or a
+     terminal, including the command that starts it.
+   - start: the FIRST frame the rendered output is actually on screen
+     (e.g. the browser window showing the animation) — not the run
+     command, not the editor still filling the frame.
+   - end: the last frame the output is still on screen.
+   Pick the single clearest run; if the result appears several times,
+   prefer the LAST, most complete one. A single code or terminal frame
+   inside this span ruins the cold open — when unsure, start LATER, once
+   the output alone fills the frame. If ANY frame clearly shows the
+   finished output on screen (a browser / app / animation / game), report
+   the span that covers it, even a short one — the frames near the end
+   are the likeliest place. Return 0 for both ONLY when no frame at all
+   shows the running result (the clip is all editor and terminal).
 2. line — the cold-open card text shown over the teaser (max {max_chars}
    characters): tell the scroller literally what they are about to
    watch, in plain educational language. Read names character-for-
@@ -735,7 +768,7 @@ Reply with ONLY a JSON object, no other text:
 
 PAYOFF_MIN_SPAN = 1.0    # a thinner span than this can't be trusted
 PAYOFF_MAX_SPAN = 40.0   # a longer "payoff" keeps its climax (the tail)
-PAYOFF_MAX_FRAMES = 16
+PAYOFF_MAX_FRAMES = 20   # more frames — they cluster at the end (see below)
 
 
 def clean_payoff(
@@ -783,8 +816,9 @@ def detect_payoff(
     n = min(PAYOFF_MAX_FRAMES, max(N_FRAMES, round(duration / 12)))
     tmp = tempfile.mkdtemp(prefix="remy_payoff_")
     try:
-        frames = extract_frames(
-            video, spread_times(duration, n=n, margin=0.0), tmp)
+        # cluster frames at the END so the payoff (which lives there and
+        # can be a tiny slice of a long video) is reliably sampled
+        frames = extract_frames(video, tail_weighted_times(duration, n), tmp)
         prompt = PAYOFF_PROMPT.format(
             frames="\n".join(frames), duration=duration,
             max_chars=MAX_CAPTION_CHARS)

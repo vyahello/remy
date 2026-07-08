@@ -141,6 +141,22 @@ def test_pick_hook_within_short_span_pads_out():
     assert win[0] <= 30.0 <= win[1]
 
 
+def test_pick_hook_within_teases_the_resolved_tail_not_the_onset():
+    # the result's onset (a particle burst) is the highest-motion moment
+    # but a messy first frame; the cold open must instead show the
+    # settled, recognisable result at the TAIL of the demo span — and
+    # never bleed back before the span start (where the code/terminal is)
+    fps = A.SAMPLE_FPS
+    scores = np.zeros(60 * fps)
+    scores[42 * fps] = 100.0   # chaotic onset near the span start
+    scores[49 * fps] = 25.0    # settled result at the tail
+    win = A.pick_hook(scores, 60.0, within=(41.0, 50.0))
+    assert win is not None
+    assert win[0] >= 44.0          # skips the 42s onset burst
+    assert win[1] <= 50.0          # stays inside the demo span
+    assert win[0] <= 49.0 <= win[1]  # lands on the settled tail
+
+
 # ---------------------------------------------------------------- crop
 
 def _frames_with_active_box(n=30, ah=60, aw=100):
