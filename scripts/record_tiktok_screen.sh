@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# record_tiktok_screen.sh — capture a slice of your X11 screen as a pristine,
-# high-quality clip ready to drop into remy. Two orientations:
+# record_tiktok_screen.sh — capture a slice of your screen as a pristine,
+# high-quality clip ready to drop into remy. Works on macOS (avfoundation) and
+# Linux/X11; the backend is picked automatically. Two orientations:
 #   vertical   → 1080x1920 (9:16) — TikTok full-screen (remy adds a caption).
 #                Grabs the tallest centered 9:16 column and upscales it.
 #   full       → your WHOLE screen at its native size (e.g. 1920x1200 on a
@@ -30,8 +31,32 @@
 #                                              TRIM_HEAD=2  trim N s off the start
 #   DURATION=30   auto-stop after 30s          TRIM_TAIL=2  trim N s off the end
 #   ENCODER=nvenc GPU encode (long sessions)   OUTDIR=DIR   where the .mp4 lands
-#   GUIDE=0       skip the on-screen frame
+#   GUIDE=0       skip the on-screen frame     SCREEN=1     macOS: grab display 1
+#
+# macOS: the first capture needs Screen Recording permission for your terminal
+#   app (System Settings > Privacy & Security > Screen Recording) — grant it,
+#   then restart the terminal. ENCODER=nvenc is Linux/NVIDIA only.
 set -euo pipefail
+
+# --- platform ----------------------------------------------------------------
+OS="$(uname -s)"
+is_macos() { [[ "$OS" == Darwin ]]; }
+is_linux() { [[ "$OS" == Linux ]]; }
+
+# Resolve $0 to an absolute path, following symlinks — GNU (readlink -f) and BSD
+# (macOS, no readlink -f) both. `install` symlinks this script, and the detached
+# background worker re-invokes SELF, so this must point at the real file.
+resolve_self() {
+    local src="$1" dir target
+    if command -v realpath >/dev/null 2>&1; then realpath "$src" && return; fi
+    if readlink -f "$src" >/dev/null 2>&1; then readlink -f "$src" && return; fi
+    while [[ -L "$src" ]]; do
+        target="$(readlink "$src")"
+        case "$target" in /*) src="$target" ;; *) src="$(dirname "$src")/$target" ;; esac
+    done
+    dir="$(cd "$(dirname "$src")" && pwd)"
+    printf '%s/%s\n' "$dir" "$(basename "$src")"
+}
 
 # ----------------------------- CONFIG (env-overridable) ----------------------
 FPS="${FPS:-60}"               # capture/output frame rate
@@ -52,7 +77,7 @@ ORIENT="${ORIENT:-vertical}"   # vertical (1080x1920 9:16) | landscape (1920x108
 
 # Background-recording state (so `stop`/`status` work from any directory).
 STATE="${REMY_REC_STATE:-${XDG_RUNTIME_DIR:-/tmp}/remy-rec}"
-SELF="$(readlink -f "$0")"
+SELF="$(resolve_self "$0")"
 # -----------------------------------------------------------------------------
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -66,7 +91,9 @@ command -v ffmpeg >/dev/null || die "ffmpeg not found"
 #        laptop panel), no aspect cropping; OUT_W/OUT_H are filled from the
 #        measured screen size in prep_geometry.
 normalize_orient() {
-    case "${ORIENT,,}" in
+    # `tr` for lowercasing (not ${x,,}) so this runs on stock macOS bash 3.2.
+    local o; o="$(printf '%s' "$ORIENT" | tr '[:upper:]' '[:lower:]')"
+    case "$o" in
         v|vert|vertical|portrait|9:16)   ORIENT=vertical;  OUT_W=1080; OUT_H=1920 ;;
         # landscape/16:9 aliases now mean "the whole screen" — no separate
         # cropped-16:9 mode (on a 16:10 panel it only lost a top/bottom margin).
@@ -76,20 +103,66 @@ normalize_orient() {
     esac
 }
 
+# macOS: avfoundation grabs a whole *display*, addressed by a video-device index
+# (`Capture screen 0`, `Capture screen 1`, …). Find it (SCREEN=N overrides).
+AVF_SCREEN=""
+detect_avf_screen() {
+    [[ -n "$AVF_SCREEN" ]] && return 0
+    if [[ -n "${SCREEN:-}" ]]; then AVF_SCREEN="$SCREEN"; return 0; fi
+    local list
+    list="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+    AVF_SCREEN="$(printf '%s\n' "$list" | \
+        sed -n 's/.*\[\([0-9][0-9]*\)\][[:space:]]*Capture screen 0.*/\1/p' | head -1)"
+    [[ -n "$AVF_SCREEN" ]] || AVF_SCREEN="$(printf '%s\n' "$list" | \
+        sed -n 's/.*\[\([0-9][0-9]*\)\][[:space:]]*Capture screen.*/\1/p' | head -1)"
+    [[ -n "$AVF_SCREEN" ]] || die "avfoundation reports no 'Capture screen' \
+device. If this is a first run, grant your terminal Screen Recording permission \
+(System Settings > Privacy & Security > Screen Recording), restart it, and retry."
+}
+
+# macOS: probe the display's real pixel size (authoritative on Retina, where the
+# captured frame is larger than the logical point size) → echoes "W H", or
+# returns non-zero (the caller must `die`; a `die` here would only exit the
+# command-substitution subshell and let the script limp on with no size).
+probe_screen_px() {
+    local probe size
+    probe="$(ffmpeg -hide_banner -f avfoundation -framerate "$FPS" \
+        -i "${AVF_SCREEN}:none" -t 0.05 -f null - 2>&1 || true)"
+    size="$(printf '%s\n' "$probe" | grep -oE '[0-9]{3,5}x[0-9]{3,5}' | head -1)"
+    [[ -n "$size" ]] || return 1
+    echo "${size%x*} ${size#*x}"
+}
+
 # --- work out the capture rectangle: largest centered slice of the chosen AR -
 prep_geometry() {
     normalize_orient
-    [[ "${XDG_SESSION_TYPE:-x11}" == "x11" ]] || die "this recorder uses \
+    if is_linux; then
+        [[ "${XDG_SESSION_TYPE:-x11}" == "x11" ]] || die "this recorder uses \
 x11grab, but the session is '${XDG_SESSION_TYPE}'. On Wayland use \
 wf-recorder/wl-screenrec instead."
+    fi
+    is_macos && detect_avf_screen   # need the screen device index either way
     if [[ -z "$REGION" ]]; then
-        command -v xrandr >/dev/null || die "xrandr not found (needed to size \
+        if is_macos; then
+            # avfoundation captures the whole display; probe its pixel size so we
+            # can crop a centered slice with the same math as the X11 path.
+            # `die` in the caller (not the subshell) so a failure really stops us.
+            local sz
+            sz="$(probe_screen_px)" || die "couldn't read the screen size from \
+avfoundation (screen device $AVF_SCREEN). Grant your terminal Screen Recording \
+permission (System Settings > Privacy & Security > Screen Recording), restart \
+it, and retry."
+            read -r sw sh <<<"$sz"
+            sx=0; sy=0
+        else
+            command -v xrandr >/dev/null || die "xrandr not found (needed to size \
 the capture region); set REGION=WxH+X+Y to skip auto-detection"
-        geo="$(xrandr --query | awk '/ connected primary/{print $4; exit}')"
-        [[ -z "$geo" ]] && geo="$(xrandr --query | awk '/ connected/{print $3; exit}')"
-        [[ "$geo" =~ ^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$ ]] || \
-            die "could not parse screen geometry from xrandr (got '$geo')"
-        IFS='x+' read -r sw sh sx sy <<<"$geo"
+            geo="$(xrandr --query | awk '/ connected primary/{print $4; exit}')"
+            [[ -z "$geo" ]] && geo="$(xrandr --query | awk '/ connected/{print $3; exit}')"
+            [[ "$geo" =~ ^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$ ]] || \
+                die "could not parse screen geometry from xrandr (got '$geo')"
+            IFS='x+' read -r sw sh sx sy <<<"$geo"
+        fi
 
         if [[ "$ORIENT" == vertical ]]; then
             # tallest 9:16 slice that fits; clamp to width on very tall screens
@@ -130,7 +203,10 @@ build_encoder() {
     set_final_tag
 }
 
-# hevc needs the hvc1 brand carried onto the remuxed/trimmed copies; h264 doesn't
+# hevc needs the hvc1 brand carried onto the remuxed/trimmed copies; h264 doesn't.
+# NOTE: for x264 this is an *empty* array, so every expansion uses the
+# "${final_tag[@]+"${final_tag[@]}"}" guard — plain "${final_tag[@]}" on an empty
+# array trips `set -u` on macOS's stock bash 3.2 ("unbound variable").
 set_final_tag() {
     case "$ENCODER" in
         x265|nvenc) final_tag=(-tag:v hvc1) ;;
@@ -152,12 +228,26 @@ prep_paths() {
 }
 
 build_cmd() {
-    cmd=(ffmpeg -hide_banner -loglevel warning -stats
-         -f x11grab -framerate "$FPS" -draw_mouse "$DRAW_MOUSE"
-         -video_size "${cap_w}x${cap_h}" -i "${DISPLAY_ID}+${off_x},${off_y}")
+    local setp="setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+    local vf crop=""
+    if is_macos; then
+        # avfoundation hands us the whole display — crop the chosen rectangle in
+        # the filtergraph (x11grab does this in-hardware via the input offset).
+        # `full` with no REGION needs no crop: the capture already IS the screen.
+        [[ "$ORIENT" != full || -n "$REGION" ]] && \
+            crop="crop=${cap_w}:${cap_h}:${off_x}:${off_y},"
+        vf="${crop}scale=${OUT_W}:${OUT_H}:flags=lanczos:in_range=full:out_range=tv,${setp}"
+        cmd=(ffmpeg -hide_banner -loglevel warning -stats
+             -f avfoundation -capture_cursor "$DRAW_MOUSE" -framerate "$FPS"
+             -i "${AVF_SCREEN}:none")
+    else
+        vf="scale=${OUT_W}:${OUT_H}:flags=lanczos:in_range=full:out_range=tv,${setp}"
+        cmd=(ffmpeg -hide_banner -loglevel warning -stats
+             -f x11grab -framerate "$FPS" -draw_mouse "$DRAW_MOUSE"
+             -video_size "${cap_w}x${cap_h}" -i "${DISPLAY_ID}+${off_x},${off_y}")
+    fi
     [[ -n "$DURATION" ]] && cmd+=(-t "$DURATION")
-    cmd+=(-vf "scale=${OUT_W}:${OUT_H}:flags=lanczos:in_range=full:out_range=tv,\
-setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+    cmd+=(-vf "$vf"
           "${venc[@]}"
           -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv
           -g "$FPS" -movflags +frag_keyframe+empty_moov+default_base_moof -an
@@ -170,7 +260,7 @@ finalize_rec() {
     # -c copy: no re-encode, just rebuild a normal front-loaded moov. Works even
     # on a partial capture — a trailing half-written fragment is dropped.
     if ffmpeg -hide_banner -loglevel error -y -i "$rec" \
-            -map 0 -c copy "${final_tag[@]}" -movflags +faststart "$out" \
+            -map 0 -c copy "${final_tag[@]+"${final_tag[@]}"}" -movflags +faststart "$out" \
             2>/dev/null && [[ -s "$out" ]]; then
         rm -f "$rec"
     else
@@ -198,7 +288,7 @@ trim_clip() {
     fi
     local tmp="${out%.mp4}.trim.mp4"
     if ffmpeg -hide_banner -loglevel error -y -ss "$head" -i "$out" -t "$keep" \
-            -map 0 -c copy "${final_tag[@]}" -movflags +faststart "$tmp" \
+            -map 0 -c copy "${final_tag[@]+"${final_tag[@]}"}" -movflags +faststart "$tmp" \
             2>/dev/null && [[ -s "$tmp" ]]; then
         mv -f "$tmp" "$out"
         echo "✂  trimmed ${head}s head + ${tail}s tail"
@@ -230,12 +320,20 @@ except Exception:
     sys.exit(1)
 w, h, x, y, mode = (int(sys.argv[1]), int(sys.argv[2]),
                     int(sys.argv[3]), int(sys.argv[4]), sys.argv[5])
-T = 6  # border thickness
+# arg6 = screen width in *pixels* (macOS/Retina); 0 = coords already in points.
+screen_px = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
+T = 6  # border thickness (points)
 try:
     root = tk.Tk()
 except Exception:
     sys.exit(1)
 root.withdraw()
+# The capture rect is in pixels, but tkinter positions windows in logical
+# points. On a Retina display those differ by the backing scale factor; convert
+# so the green frame lands exactly on the region ffmpeg will crop.
+scale = screen_px / root.winfo_screenwidth() if screen_px > 0 else 1.0
+if scale != 1.0:
+    w, h, x, y = int(w / scale), int(h / scale), int(x / scale), int(y / scale)
 
 def bar(gw, gh, gx, gy):
     t = tk.Toplevel(root)
@@ -274,7 +372,7 @@ else:
         time.sleep(0.05)
 root.destroy()
 PY
-) "$cap_w" "$cap_h" "$off_x" "$off_y" "wait"
+) "$cap_w" "$cap_h" "$off_x" "$off_y" "wait" "${sw:-0}"
 }
 
 arrange_pause() {
@@ -307,9 +405,11 @@ clear_screen() {
 print_banner() {  # $1 = "fg" (q to stop) | "bg" (stop command)
     local scalenote="lanczos-scaled"
     [[ "$ORIENT" == full ]] && scalenote="native 1:1"
+    local src="$DISPLAY_ID"
+    is_macos && src="avfoundation screen ${AVF_SCREEN}"
     cat <<INFO
 🎬 remy screen recorder
-   display     : $DISPLAY_ID
+   source      : $src
    capture     : ${cap_w}x${cap_h} at +${off_x},+${off_y}  (native $ORIENT slice)
    output      : ${OUT_W}x${OUT_H} @ ${FPS}fps  ($ORIENT, $scalenote)
    encoder     : $ENCODER  ${ENCODER:+(crf ${CRF})}
@@ -379,7 +479,13 @@ $(cat "$STATE/ffpid")). stop it first:  $SELF stop"
     # Detach into its own session so it survives this shell closing and isn't
     # killed by the terminal. The worker re-enters this script, runs ffmpeg,
     # then finalizes + trims when ffmpeg exits (by `stop` signal or DURATION).
-    setsid bash "$SELF" __bg_worker "$STATE" </dev/null >"$STATE/log" 2>&1 &
+    # `setsid` is Linux-only; on macOS `nohup … & disown` gives the same detach.
+    if command -v setsid >/dev/null 2>&1; then
+        setsid bash "$SELF" __bg_worker "$STATE" </dev/null >"$STATE/log" 2>&1 &
+    else
+        nohup bash "$SELF" __bg_worker "$STATE" </dev/null >"$STATE/log" 2>&1 &
+        disown 2>/dev/null || true
+    fi
     echo "● recording in the background → $out"
     echo "   stop it (from any directory) with:  ${REMY_REC_NAME:-$SELF} stop"
     echo "   check it with:                       ${REMY_REC_NAME:-$SELF} status"
@@ -390,7 +496,10 @@ run_bg_worker() {
     # shellcheck disable=SC1091
     source "$state/meta"
     set_final_tag
-    mapfile -d '' cmd < "$state/cmd"
+    # Read the NUL-delimited argv back into an array. A `read -d ''` loop instead
+    # of `mapfile -d ''` so this runs on stock macOS bash 3.2 (no mapfile).
+    cmd=()
+    while IFS= read -r -d '' _arg; do cmd+=("$_arg"); done < "$state/cmd"
     trap '' INT TERM       # ignore here; only ffmpeg should act on the signal
     "${cmd[@]}" &
     local ffpid=$!
@@ -462,7 +571,7 @@ ${cap_w}x${cap_h} at +${off_x},+${off_y}" ;;
 |full|fullscreen|native|screen)
                   ORIENT="$1"; run_foreground ;;
     -h|--help|help)
-        sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+        sed -n '2,38p' "$SELF" | sed 's/^# \{0,1\}//' ;;
     *)            die "unknown command '$1' (use once|start|stop|status|guide|install \
 [vertical|full])" ;;
 esac
